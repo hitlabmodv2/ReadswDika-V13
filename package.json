@@ -6,7 +6,17 @@
   "types": "index.d.ts",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch-path=./src --watch-path=./.env src/index.js"
+    "dev": "node --watch-path=./src --watch-path=./.env src/index.js",
+    "pm2": "pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop wily-bot",
+    "pm2:restart": "pm2 restart wily-bot",
+    "pm2:reload": "pm2 reload wily-bot",
+    "pm2:delete": "pm2 delete wily-bot",
+    "pm2:logs": "pm2 logs wily-bot",
+    "pm2:status": "pm2 status",
+    "pm2:monit": "pm2 monit",
+    "pm2:save": "pm2 save",
+    "pm2:startup": "pm2 startup"
   },
   "keywords": [
     "whatsapp-bot",
