@@ -3264,22 +3264,15 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                                 try { await hisoka.sendMessage(m.from, { delete: loadingMsg.key }); } catch (_) {}
                                         }
 
-                                        // Kirim gambar + teks perbandingan sebagai caption (reply ke pesan user)
+                                        // Kirim gambar gabungan (1 paket) + caption perbandingan sebagai reply
+                                        const hasCombined = result.combined && result.combined.length > 500;
                                         const hasImgA = result.imgA && result.imgA.length > 500;
                                         const hasImgB = result.imgB && result.imgB.length > 500;
-                                        const nameA = result.variantA ? `${result.a.name} (${result.variantA})` : result.a.name;
-                                        const nameB = result.variantB ? `${result.b.name} (${result.variantB})` : result.b.name;
 
-                                        if (hasImgA && hasImgB) {
-                                                // Kirim foto HP A dengan full caption perbandingan sebagai reply
+                                        if (hasCombined) {
                                                 await hisoka.sendMessage(m.from, {
-                                                        image: result.imgA,
+                                                        image: result.combined,
                                                         caption: result.text
-                                                }, { quoted: m });
-                                                // Kirim foto HP B sebagai pesan tambahan
-                                                await hisoka.sendMessage(m.from, {
-                                                        image: result.imgB,
-                                                        caption: `🅱️ *${nameB}*`
                                                 }, { quoted: m });
                                         } else if (hasImgA) {
                                                 await hisoka.sendMessage(m.from, {

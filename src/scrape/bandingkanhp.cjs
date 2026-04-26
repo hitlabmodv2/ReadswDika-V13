@@ -21,6 +21,8 @@
 'use strict';
 
 const { cekHP, getHPImage } = require('./cekhp.cjs');
+let sharp;
+try { sharp = require('sharp'); } catch (_) { sharp = null; }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -84,9 +86,35 @@ function stripVariant(q = '') {
 }
 
 function extractVariant(q = '') {
-  const m = q.match(/\b(\d+\s*GB\s*[\/+]\s*\d+\s*GB)\b/i)
-    || q.match(/\b(\d+\s*GB)\b/i);
+  const m = q.match(/\b(\d+\s*GB\s*[\/+]\s*\d+\s*(?:GB|TB))\b/i)
+    || q.match(/\b(\d+\s*GB)\b/i)
+    || q.match(/\b(\d+\s*TB)\b/i);
   return m ? m[1].replace(/\s+/g, '').toUpperCase() : '';
+}
+
+/** Pisahkan variant "8GB/128GB" → { ram: 8, storage: 128, storageUnit: 'GB' } */
+function parseVariantParts(variant = '') {
+  if (!variant) return null;
+  const v = variant.toUpperCase().replace(/\s+/g, '');
+  // Format RAM/Storage: "8GB/128GB" atau "8GB+128GB"
+  let m = v.match(/(\d+(?:\.\d+)?)GB[\/+](\d+(?:\.\d+)?)(GB|TB)/);
+  if (m) {
+    return {
+      ram: parseFloat(m[1]),
+      storage: parseFloat(m[2]),
+      storageUnit: m[3],
+    };
+  }
+  // Hanya storage: "128GB" / "1TB"
+  m = v.match(/^(\d+(?:\.\d+)?)(GB|TB)$/);
+  if (m) {
+    return {
+      ram: 0,
+      storage: parseFloat(m[1]),
+      storageUnit: m[2],
+    };
+  }
+  return null;
 }
 
 // ── Unified spec rows ────────────────────────────────────────────────────────
@@ -262,22 +290,59 @@ const SPEC_ROWS = [
 
 // ── Scoring + format ──────────────────────────────────────────────────────────
 
-function buildRows(a, b) {
+function buildRows(a, b, variantA = '', variantB = '') {
   let winsA = 0, winsB = 0, draws = 0;
   const rows = [];
+
+  const vA = parseVariantParts(variantA);
+  const vB = parseVariantParts(variantB);
 
   for (const row of SPEC_ROWS) {
     if (row.label === 'Harga Global') continue; // ditangani manual
 
-    const txtA = row.getText(a.specs);
-    const txtB = row.getText(b.specs);
+    let txtA = row.getText(a.specs);
+    let txtB = row.getText(b.specs);
+
+    let numA = row.getNum ? (row.getNum(a.specs) || 0) : 0;
+    let numB = row.getNum ? (row.getNum(b.specs) || 0) : 0;
+
+    // Override RAM/Storage/RAM&Storage berdasarkan variant pilihan user
+    if (vA) {
+      if (row.label === 'RAM' && vA.ram > 0) {
+        txtA = vA.ram + ' GB';
+        numA = vA.ram;
+      } else if (row.label === 'Storage' && vA.storage > 0) {
+        txtA = vA.storage + ' ' + vA.storageUnit;
+        numA = vA.storageUnit === 'TB' ? vA.storage * 1024 : vA.storage;
+      } else if (row.label === 'RAM & Storage (lengkap)') {
+        if (vA.ram > 0 && vA.storage > 0) {
+          txtA = `${vA.storage} ${vA.storageUnit} ${vA.ram} GB RAM`;
+        } else if (vA.storage > 0) {
+          txtA = `${vA.storage} ${vA.storageUnit}`;
+        }
+      }
+    }
+    if (vB) {
+      if (row.label === 'RAM' && vB.ram > 0) {
+        txtB = vB.ram + ' GB';
+        numB = vB.ram;
+      } else if (row.label === 'Storage' && vB.storage > 0) {
+        txtB = vB.storage + ' ' + vB.storageUnit;
+        numB = vB.storageUnit === 'TB' ? vB.storage * 1024 : vB.storage;
+      } else if (row.label === 'RAM & Storage (lengkap)') {
+        if (vB.ram > 0 && vB.storage > 0) {
+          txtB = `${vB.storage} ${vB.storageUnit} ${vB.ram} GB RAM`;
+        } else if (vB.storage > 0) {
+          txtB = `${vB.storage} ${vB.storageUnit}`;
+        }
+      }
+    }
+
     if (!txtA && !txtB) continue;
 
     let winnerA = false, winnerB = false;
 
     if (row.getNum) {
-      const numA = row.getNum(a.specs) || 0;
-      const numB = row.getNum(b.specs) || 0;
       if (numA > 0 && numB > 0 && numA !== numB) {
         if (row.higher) { winnerA = numA > numB; winnerB = numB > numA; }
         else             { winnerA = numA < numB; winnerB = numB < numA; }
@@ -316,7 +381,7 @@ function formatComparison(a, b, variantA = '', variantB = '') {
   const idrA   = a.priceInfo?.idr ? 'Rp ' + Math.round(a.priceInfo.idr).toLocaleString('id-ID') : null;
   const idrB   = b.priceInfo?.idr ? 'Rp ' + Math.round(b.priceInfo.idr).toLocaleString('id-ID') : null;
 
-  const { rows, winsA, winsB, draws, pctA, pctB } = buildRows(a, b);
+  const { rows, winsA, winsB, draws, pctA, pctB } = buildRows(a, b, variantA, variantB);
   const overallWinner = winsA > winsB ? labelA : winsB > winsA ? labelB : null;
 
   let out = '';
@@ -373,6 +438,81 @@ function formatComparison(a, b, variantA = '', variantB = '') {
   return out;
 }
 
+// ── Image combiner (1 paket) ─────────────────────────────────────────────────
+
+/**
+ * Gabungkan 2 foto HP berdampingan dalam 1 gambar (PNG) dengan
+ * label 🅰️ / 🅱️ ringan agar mudah dibedakan.
+ * Return Buffer PNG, atau null jika gagal/sharp tidak ada.
+ */
+async function buildCombinedImage(imgA, imgB) {
+  if (!sharp) return null;
+  if (!imgA && !imgB) return null;
+
+  const SLOT_W = 600;
+  const SLOT_H = 600;
+  const GAP    = 20;
+  const PAD    = 20;
+  const BG     = { r: 255, g: 255, b: 255, alpha: 1 };
+
+  async function prepSlot(buf, label) {
+    let base;
+    if (buf && buf.length > 500) {
+      try {
+        base = await sharp(buf)
+          .resize(SLOT_W, SLOT_H, { fit: 'contain', background: BG })
+          .png()
+          .toBuffer();
+      } catch (_) {
+        base = null;
+      }
+    }
+    if (!base) {
+      // Slot kosong (placeholder)
+      const placeholder = `<svg xmlns="http://www.w3.org/2000/svg" width="${SLOT_W}" height="${SLOT_H}">
+        <rect width="100%" height="100%" fill="#f4f4f4"/>
+        <text x="50%" y="50%" font-family="Arial" font-size="36" fill="#bbb"
+              text-anchor="middle" dominant-baseline="middle">No Image</text>
+      </svg>`;
+      base = await sharp(Buffer.from(placeholder)).png().toBuffer();
+    }
+
+    // Tambah label 🅰️/🅱️ di pojok kiri atas
+    const labelSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60">
+      <rect x="0" y="0" width="120" height="60" rx="12" ry="12" fill="rgba(0,0,0,0.6)"/>
+      <text x="60" y="40" font-family="Arial" font-size="34" font-weight="bold"
+            fill="white" text-anchor="middle">${label}</text>
+    </svg>`;
+    return sharp(base)
+      .composite([{ input: Buffer.from(labelSvg), top: 12, left: 12 }])
+      .png()
+      .toBuffer();
+  }
+
+  const [slotA, slotB] = await Promise.all([
+    prepSlot(imgA, 'A'),
+    prepSlot(imgB, 'B'),
+  ]);
+
+  const totalW = PAD * 2 + SLOT_W * 2 + GAP;
+  const totalH = PAD * 2 + SLOT_H;
+
+  return sharp({
+    create: {
+      width: totalW,
+      height: totalH,
+      channels: 4,
+      background: BG,
+    },
+  })
+    .composite([
+      { input: slotA, top: PAD, left: PAD },
+      { input: slotB, top: PAD, left: PAD + SLOT_W + GAP },
+    ])
+    .png()
+    .toBuffer();
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 async function bandingkanHP(rawQueryA, rawQueryB) {
@@ -381,7 +521,7 @@ async function bandingkanHP(rawQueryA, rawQueryB) {
   const cleanA   = stripVariant(rawQueryA) || rawQueryA;
   const cleanB   = stripVariant(rawQueryB) || rawQueryB;
 
-  // Fetch spesifikasi paralel
+  // Fetch spesifikasi paralel (realtime dari GSMArena)
   const [a, b] = await Promise.all([
     cekHP(cleanA),
     cekHP(cleanB),
@@ -393,9 +533,12 @@ async function bandingkanHP(rawQueryA, rawQueryB) {
     getHPImage(b.image, b.bigpicUrl).catch(() => null),
   ]);
 
+  // Gabung gambar jadi 1 paket side-by-side
+  const combined = await buildCombinedImage(imgA, imgB).catch(() => null);
+
   const text = formatComparison(a, b, variantA, variantB);
 
-  return { a, b, imgA, imgB, text, variantA, variantB };
+  return { a, b, imgA, imgB, combined, text, variantA, variantB };
 }
 
-module.exports = { bandingkanHP, formatComparison, buildRows };
+module.exports = { bandingkanHP, formatComparison, buildRows, buildCombinedImage };
