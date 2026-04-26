@@ -556,8 +556,8 @@ function formatComparison(a, b, variantA = '', variantB = '') {
       }
 
       out += `│  • *${lbl}*\n`;
-      out += `│    🅰️ ${shortVal(txtA || '—', 80)}${mA}\n`;
-      out += `│    🅱️ ${shortVal(txtB || '—', 80)}${mB}\n`;
+      out += `│    🅰️ ${txtA || '—'}${mA}\n`;
+      out += `│    🅱️ ${txtB || '—'}${mB}\n`;
     }
   }
 
@@ -663,12 +663,9 @@ async function bandingkanHP(rawQueryA, rawQueryB) {
     getHPImage(b.image, b.bigpicUrl).catch(() => null),
   ]);
 
-  // Gabung gambar jadi 1 paket side-by-side
-  const combined = await buildCombinedImage(imgA, imgB).catch(() => null);
-
   const text = formatComparison(a, b, variantA, variantB);
 
-  return { a, b, imgA, imgB, combined, text, variantA, variantB };
+  return { a, b, imgA, imgB, text, variantA, variantB };
 }
 
 module.exports = { bandingkanHP, formatComparison, buildRows, buildCombinedImage };
