@@ -1,0 +1,29 @@
+dist
+.DS_Store
+server/public
+vite.config.ts.*
+*.tar.gz
+.upm
+tmp/
+bin/
+.env
+.replit
+replit.md
+.local
+.cache
+.config
+data
+index.d.ts
+
+# Sessions — folder hisoka diizinkan upload, sisanya dikosongkan
+sessions/**
+!sessions/
+!sessions/hisoka
+!sessions/hisoka/**
+
+# Jadibot — folder ada tapi isinya dikosongkan
+jadibot/**
+!jadibot/
+!jadibot/.gitkeep
+.token
+

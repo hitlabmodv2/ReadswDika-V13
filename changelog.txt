@@ -1,0 +1,65 @@
+🤖 Script Wily Bot — *V12*
+📅 Updated: Rabu, 22 April 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+📦 Total Update: *11*
+🔧 4 Bug Fix
+♻️ 3 Pembaruan
+✨ 4 Fitur Baru (6 command)
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 BUG FIX
+
+◈ Fix Notif *.jadibot* Spam di WhatsApp
+> ✦ Notif sekarang cuma dikirim sekali aja
+> ✦ Tidak ada lagi spam saat reconnect/pairing ulang
+
+◈ Fix *.jadibot* Sering Stuck saat Pairing
+> ✦ Socket lama auto-close sebelum pairing baru
+
+◈ Fix Caption Welcome/Goodbye Kepotong
+> ✦ Format dirapikan, tanggal & jam dipisah
+
+◈ Fix *.cekhp* Harga IDR Kadang Kosong
+> ✦ Konversi kurs pakai 4 API cadangan
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+♻️ PEMBARUAN
+
+◈ Menu Utama Lebih Ringkas
+> ✦ Seksi dipisah biar gampang dibaca
+
+◈ Preview Welcome/Goodbye Realtime
+> ✦ Tampil salam pagi/siang/sore/malam otomatis
+
+◈ Log Error Lebih Singkat
+> ✦ Default tampil 3 error terbaru saja
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✨ FITUR BARU
+
+◈ *.welcome / .goodbye* — Sambutan & Perpisahan Member
+> ✦ Aktifkan: .welcome on / .goodbye on
+> ✦ Nonaktifkan: .welcome off / .goodbye off
+> ✦ Caption otomatis tag member, admin, & info grup
+
+◈ *.tempmail* — Email Sementara
+> ✦ Buat email anonim instan buat verifikasi
+> ✦ Cek inbox langsung dari chat bot
+
+◈ *.pixiv / .pixivr18* — Cari Gambar dari Pixiv
+> ✦ .pixiv <keyword> → gambar SFW
+> ✦ .pixivr18 <keyword> → khusus grup NSFW
+
+◈ *.ssweb* — Screenshot Halaman Web
+> ✦ Format: .ssweb <link>
+> ✦ Hasil tangkapan layar penuh halaman web
+
+◈ *.whatsmusik* — Tebak Judul Lagu
+> ✦ Reply audio/voice/video → bot kenali judulnya
+> ✦ Hasil: judul, artis, album + cover lagu
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🤖 Wily-Bot — Updated *22 Apr 2026*
