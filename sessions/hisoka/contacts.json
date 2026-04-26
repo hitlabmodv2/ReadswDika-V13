@@ -347,7 +347,8 @@
     "id": "6285183687492@s.whatsapp.net",
     "name": "! Ikhsan",
     "lid": "154481887056083@lid",
-    "jid": "6285183687492@s.whatsapp.net"
+    "jid": "6285183687492@s.whatsapp.net",
+    "notify": "MAULANA"
   },
   "6281242391531@s.whatsapp.net": {
     "isContact": true,
@@ -6658,7 +6659,8 @@
     "id": "6281549166315@s.whatsapp.net",
     "name": "kazuko・友",
     "lid": "215693693821070@lid",
-    "jid": "6281549166315@s.whatsapp.net"
+    "jid": "6281549166315@s.whatsapp.net",
+    "notify": "adien"
   },
   "6283899812785@s.whatsapp.net": {
     "isContact": true,
@@ -8786,7 +8788,8 @@
     "id": "6281374976765@s.whatsapp.net",
     "name": "√tita💅",
     "lid": "195713338183899@lid",
-    "jid": "6281374976765@s.whatsapp.net"
+    "jid": "6281374976765@s.whatsapp.net",
+    "notify": "."
   },
   "6283846191409@s.whatsapp.net": {
     "isContact": true,
@@ -10111,7 +10114,8 @@
     "id": "6289688206739@s.whatsapp.net",
     "name": "Agan Rizkia",
     "lid": "81582920577063@lid",
-    "jid": "6289688206739@s.whatsapp.net"
+    "jid": "6289688206739@s.whatsapp.net",
+    "notify": "Wily"
   },
   "6281222051074@s.whatsapp.net": {
     "isContact": true,
@@ -17781,7 +17785,8 @@
     "id": "6282189076619@s.whatsapp.net",
     "name": "•√F",
     "lid": "84636709445686@lid",
-    "jid": "6282189076619@s.whatsapp.net"
+    "jid": "6282189076619@s.whatsapp.net",
+    "notify": "F"
   },
   "6289669355242@s.whatsapp.net": {
     "isContact": true,
@@ -29538,7 +29543,8 @@
     "id": "6281353726941@s.whatsapp.net",
     "name": "Ikell🅥",
     "lid": "192706760442045@lid",
-    "jid": "6281353726941@s.whatsapp.net"
+    "jid": "6281353726941@s.whatsapp.net",
+    "notify": "Ikell ♪"
   },
   "6282126269135@s.whatsapp.net": {
     "isContact": true,
@@ -31641,5 +31647,50 @@
     "id": "239328697536578@lid",
     "lid": "239328697536578@lid",
     "notify": "Anda Siapa?"
+  },
+  "82828679200798@lid": {
+    "id": "82828679200798@lid",
+    "lid": "82828679200798@lid",
+    "notify": "𝙢𝙖𝙪𝙡𝙖𝙣𝙖 𝙣𝙜𝙚𝙣"
+  },
+  "276596413993058@lid": {
+    "id": "276596413993058@lid",
+    "lid": "276596413993058@lid",
+    "imgUrl": "removed"
+  },
+  "215693693821070@lid": {
+    "id": "215693693821070@lid",
+    "lid": "215693693821070@lid",
+    "notify": "adien"
+  },
+  "174577888038922@lid": {
+    "id": "174577888038922@lid",
+    "lid": "174577888038922@lid",
+    "notify": "γυς ρου"
+  },
+  "161903758319674@lid": {
+    "id": "161903758319674@lid",
+    "lid": "161903758319674@lid",
+    "imgUrl": "changed"
+  },
+  "81582920577063@lid": {
+    "id": "81582920577063@lid",
+    "lid": "81582920577063@lid",
+    "notify": "Wily"
+  },
+  "29476360605782@lid": {
+    "id": "29476360605782@lid",
+    "lid": "29476360605782@lid",
+    "imgUrl": "removed"
+  },
+  "211119369134180@lid": {
+    "id": "211119369134180@lid",
+    "lid": "211119369134180@lid",
+    "imgUrl": "changed"
+  },
+  "154481887056083@lid": {
+    "id": "154481887056083@lid",
+    "lid": "154481887056083@lid",
+    "notify": "MAULANA"
   }
 }
