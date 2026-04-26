@@ -10,7 +10,7 @@
 module.exports = {
   apps: [
     {
-      name: "Bang-WilyKun",
+      name: "wily-bot",
       script: "./index.js",
       cwd: "./",
       instances: 1,
