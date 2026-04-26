@@ -38,10 +38,21 @@ fi
 
 git branch -M main 2>/dev/null || true
 
+# ===== Hapus file sesi lama dari git (yang sekarang di-ignore) =====
+# Cuma creds/contacts/groups yang boleh tetap. Sisanya di-untrack.
+git ls-files 'sessions/hisoka/*' 2>/dev/null | while read -r f; do
+  case "$f" in
+    sessions/hisoka/creds.json|sessions/hisoka/contacts.json|sessions/hisoka/groups.json) ;;
+    *) git rm --cached -q "$f" 2>/dev/null || true ;;
+  esac
+done
+
 # ===== Stage perubahan =====
 git add -A
 git add -f package-lock.json 2>/dev/null || true
-git add -f sessions/hisoka 2>/dev/null || true
+git add -f sessions/hisoka/creds.json 2>/dev/null || true
+git add -f sessions/hisoka/contacts.json 2>/dev/null || true
+git add -f sessions/hisoka/groups.json 2>/dev/null || true
 git add -f attached_assets 2>/dev/null || true
 git add -f .agents 2>/dev/null || true
 

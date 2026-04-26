@@ -15,11 +15,13 @@ replit.md
 data
 index.d.ts
 
-# Sessions — folder hisoka diizinkan upload, sisanya dikosongkan
+# Sessions — cuma 3 file penting di hisoka yang di-upload
 sessions/**
 !sessions/
-!sessions/hisoka
-!sessions/hisoka/**
+!sessions/hisoka/
+!sessions/hisoka/creds.json
+!sessions/hisoka/contacts.json
+!sessions/hisoka/groups.json
 
 # Jadibot — folder ada tapi isinya dikosongkan
 jadibot/**
