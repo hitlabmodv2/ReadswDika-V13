@@ -3255,7 +3255,7 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                         const { bandingkanHP } = _require(path.resolve('./src/scrape/bandingkanhp.cjs'));
                                         await hisoka.sendMessage(m.from, { react: { text: '🔎', key: m.key } });
                                         const loadingMsg = await tolak(hisoka, m,
-                                                `🔎 Mencari data *${queryA}* dan *${queryB}*...\nMohon tunggu sebentar.`
+                                                `🔎 Mencari data *${queryA}* dan *${queryB}*...\nMohon tunggu sebentar ⏳`
                                         );
 
                                         const result = await bandingkanHP(queryA, queryB);
@@ -3264,6 +3264,34 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                                 try { await hisoka.sendMessage(m.from, { delete: loadingMsg.key }); } catch (_) {}
                                         }
 
+                                        // Kirim gambar kedua HP sebagai album kalau ada
+                                        const imgs = [];
+                                        const caps = [];
+                                        if (result.imgA && result.imgA.length > 500) {
+                                                imgs.push(result.imgA);
+                                                const vA = result.variantA ? ` (${result.variantA})` : '';
+                                                caps.push(`🅰️ *${result.a.name}${vA}*`);
+                                        }
+                                        if (result.imgB && result.imgB.length > 500) {
+                                                imgs.push(result.imgB);
+                                                const vB = result.variantB ? ` (${result.variantB})` : '';
+                                                caps.push(`🅱️ *${result.b.name}${vB}*`);
+                                        }
+
+                                        if (imgs.length === 2) {
+                                                try {
+                                                        const albumItems = imgs.map((buf, i) => ({ image: buf, caption: caps[i] }));
+                                                        await hisoka.sendMessage(m.from, { albumMessage: albumItems }, { quoted: m });
+                                                } catch (_) {
+                                                        for (let i = 0; i < imgs.length; i++) {
+                                                                await hisoka.sendMessage(m.from, { image: imgs[i], caption: caps[i] }, { quoted: i === 0 ? m : undefined });
+                                                        }
+                                                }
+                                        } else if (imgs.length === 1) {
+                                                await hisoka.sendMessage(m.from, { image: imgs[0], caption: caps[0] }, { quoted: m });
+                                        }
+
+                                        // Kirim teks perbandingan sebagai reply ke pesan user
                                         await hisoka.sendMessage(m.from, { text: result.text }, { quoted: m });
                                         await hisoka.sendMessage(m.from, { react: { text: '✅', key: m.key } });
                                         logCommand(m, hisoka, 'bandingkan');
