@@ -492,12 +492,13 @@ async function injectEndMessage(hisoka, WAMessage) {
         const regPrefix = new RegExp(`^${process.env.BOT_PREFIX || '!'}`);
         const prefix = regPrefix.test(WAMessage.text) ? WAMessage.text.match(regPrefix)[0] : '';
         const afterPrefix = WAMessage.text.replace(regPrefix, '').trim().split(/ +/)[0];
-        const allowNoPrefix = process.env.BOT_ALLOWED_NO_PREFIX === 'true' && !prefix;
         const hasExtraWords = WAMessage.text.trim().includes(' ');
+        const matchesCmd = hisoka.loadedCommands.some(cmd => new RegExp(`^${escapeRegExp(afterPrefix)}$`, 'i').test(cmd));
+        const allowNoPrefix = process.env.BOT_ALLOWED_NO_PREFIX === 'true' && !prefix && matchesCmd;
         const isCommand =
-                (!!prefix && hisoka.loadedCommands.some(cmd => new RegExp(`^${escapeRegExp(afterPrefix)}$`, 'i').test(cmd))) ||
-                (!prefix && !hasExtraWords && hisoka.loadedCommands.some(cmd => new RegExp(`^${escapeRegExp(afterPrefix)}$`, 'i').test(cmd))) ||
-                allowNoPrefix;
+                (!!prefix && matchesCmd) ||
+                (!prefix && !hasExtraWords && matchesCmd) ||
+                (!prefix && hasExtraWords && allowNoPrefix);
         const query = isCommand
                 ? WAMessage.text.replace(regPrefix, '').replace(afterPrefix, '').trim()
                 : WAMessage.text.trim();
