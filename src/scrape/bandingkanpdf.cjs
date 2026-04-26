@@ -168,45 +168,48 @@ async function buildComparisonPDF(result) {
     { label: 'Charging',  a: pick(specsA, 'Battery', ['Charging']),       b: pick(specsB, 'Battery', ['Charging']) },
   ];
 
-  // Header bar
-  doc.roundedRect(MARGIN, y, CONTENT_W, 22, 3).fill('#059669');
-  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(11)
-    .text('RINGKASAN SPEK PENTING', MARGIN + 10, y + 6);
+  // Pastikan ruang utk seluruh ringkasan (header + sub + ~9 row)
+  ensureSpace(24 + 20 + summary.length * 30);
+
+  // Header bar (pakai warna mencolok biar gampang dilihat)
+  doc.roundedRect(MARGIN, y, CONTENT_W, 24, 3).fill('#059669');
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(13)
+    .text('RINGKASAN SPEK PENTING', MARGIN + 12, y + 6);
   doc.fillColor('#000000');
-  y += 22;
+  y += 24;
 
   // Sub-header
-  doc.rect(MARGIN, y, specColW, 18).fill('#d1fae5');
-  doc.rect(MARGIN + specColW, y, valColW, 18).fill('#dbeafe');
-  doc.rect(MARGIN + specColW + valColW, y, valColW, 18).fill('#fee2e2');
-  doc.fillColor('#000000').font('Helvetica-Bold').fontSize(8);
-  doc.text('Spesifikasi', MARGIN + 6, y + 5, { width: specColW - 12 });
-  doc.text('A', MARGIN + specColW + 6, y + 5, { width: valColW - 12 });
-  doc.text('B', MARGIN + specColW + valColW + 6, y + 5, { width: valColW - 12 });
-  y += 18;
+  doc.rect(MARGIN, y, specColW, 20).fill('#d1fae5');
+  doc.rect(MARGIN + specColW, y, valColW, 20).fill('#dbeafe');
+  doc.rect(MARGIN + specColW + valColW, y, valColW, 20).fill('#fee2e2');
+  doc.fillColor('#000000').font('Helvetica-Bold').fontSize(9.5);
+  doc.text('Spesifikasi', MARGIN + 6, y + 6, { width: specColW - 12 });
+  doc.text('A', MARGIN + specColW + 6, y + 6, { width: valColW - 12 });
+  doc.text('B', MARGIN + specColW + valColW + 6, y + 6, { width: valColW - 12 });
+  y += 20;
 
   let zebraSum = false;
   for (const r of summary) {
-    doc.font('Helvetica').fontSize(8.5);
+    doc.font('Helvetica').fontSize(9.5);
     const hL = doc.heightOfString(r.label, { width: specColW - 12 });
     const hA = doc.heightOfString(r.a, { width: valColW - 12 });
     const hB = doc.heightOfString(r.b, { width: valColW - 12 });
-    const rowH = Math.max(hL, hA, hB) + 12;
+    const rowH = Math.max(hL, hA, hB) + 14;
     ensureSpace(rowH);
     if (zebraSum) doc.rect(MARGIN, y, CONTENT_W, rowH).fill('#f0fdf4');
-    doc.strokeColor('#d1fae5').lineWidth(0.5)
+    doc.strokeColor('#a7f3d0').lineWidth(0.5)
       .moveTo(MARGIN, y + rowH).lineTo(MARGIN + CONTENT_W, y + rowH).stroke();
     doc.moveTo(MARGIN + specColW, y).lineTo(MARGIN + specColW, y + rowH).stroke();
     doc.moveTo(MARGIN + specColW + valColW, y).lineTo(MARGIN + specColW + valColW, y + rowH).stroke();
-    doc.fillColor('#065f46').font('Helvetica-Bold').fontSize(8.5)
-      .text(r.label, MARGIN + 6, y + 6, { width: specColW - 12 });
-    doc.fillColor('#000000').font('Helvetica').fontSize(8.5)
-      .text(r.a, MARGIN + specColW + 6, y + 6, { width: valColW - 12 });
-    doc.text(r.b, MARGIN + specColW + valColW + 6, y + 6, { width: valColW - 12 });
+    doc.fillColor('#065f46').font('Helvetica-Bold').fontSize(9.5)
+      .text(r.label, MARGIN + 6, y + 7, { width: specColW - 12 });
+    doc.fillColor('#000000').font('Helvetica').fontSize(9.5)
+      .text(r.a, MARGIN + specColW + 6, y + 7, { width: valColW - 12 });
+    doc.text(r.b, MARGIN + specColW + valColW + 6, y + 7, { width: valColW - 12 });
     y += rowH;
     zebraSum = !zebraSum;
   }
-  y += 12;
+  y += 14;
 
   // ── SPEC TABLES PER CATEGORY ────────────────────────────────────────────
   // Tabel spek lengkap: hanya kategori yg BELUM dirangkum di RINGKASAN biar gak dobel.
@@ -219,22 +222,24 @@ async function buildComparisonPDF(result) {
   ]);
 
   function drawCategoryHeader(catName) {
-    ensureSpace(28);
-    doc.roundedRect(MARGIN, y, CONTENT_W, 22, 3).fill('#374151');
-    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(11)
-      .text(CATEGORY_EMOJI_TXT[catName] || catName, MARGIN + 10, y + 6);
+    // Pastikan ada ruang utk header (24) + sub-header (20) + minimal 1 row data (~30)
+    // supaya header gak orphan di bawah halaman
+    ensureSpace(24 + 20 + 30);
+    doc.roundedRect(MARGIN, y, CONTENT_W, 24, 3).fill('#1f2937');
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(13)
+      .text(CATEGORY_EMOJI_TXT[catName] || catName, MARGIN + 12, y + 6);
     doc.fillColor('#000000');
-    y += 22;
+    y += 24;
 
     // Sub-header for columns
-    doc.rect(MARGIN, y, specColW, 18).fill('#e5e7eb');
-    doc.rect(MARGIN + specColW, y, valColW, 18).fill('#dbeafe');
-    doc.rect(MARGIN + specColW + valColW, y, valColW, 18).fill('#fee2e2');
-    doc.fillColor('#000000').font('Helvetica-Bold').fontSize(8);
-    doc.text('Spesifikasi', MARGIN + 6, y + 5, { width: specColW - 12 });
-    doc.text('A', MARGIN + specColW + 6, y + 5, { width: valColW - 12 });
-    doc.text('B', MARGIN + specColW + valColW + 6, y + 5, { width: valColW - 12 });
-    y += 18;
+    doc.rect(MARGIN, y, specColW, 20).fill('#e5e7eb');
+    doc.rect(MARGIN + specColW, y, valColW, 20).fill('#dbeafe');
+    doc.rect(MARGIN + specColW + valColW, y, valColW, 20).fill('#fee2e2');
+    doc.fillColor('#000000').font('Helvetica-Bold').fontSize(9.5);
+    doc.text('Spesifikasi', MARGIN + 6, y + 6, { width: specColW - 12 });
+    doc.text('A', MARGIN + specColW + 6, y + 6, { width: valColW - 12 });
+    doc.text('B', MARGIN + specColW + valColW + 6, y + 6, { width: valColW - 12 });
+    y += 20;
   }
 
   function drawRow(label, valA, valB, zebra) {
@@ -242,7 +247,7 @@ async function buildComparisonPDF(result) {
     const cleanB = clean(valB);
     if (cleanA === '-' && cleanB === '-') return;
 
-    doc.font('Helvetica').fontSize(8.5);
+    doc.font('Helvetica').fontSize(9.5);
     const hLabel = doc.heightOfString(label, { width: specColW - 12 });
     const hA = doc.heightOfString(cleanA, { width: valColW - 12 });
     const hB = doc.heightOfString(cleanB, { width: valColW - 12 });
@@ -253,14 +258,14 @@ async function buildComparisonPDF(result) {
     if (zebra) {
       doc.rect(MARGIN, y, CONTENT_W, rowH).fill('#f9fafb');
     }
-    doc.strokeColor('#e5e7eb').lineWidth(0.5)
+    doc.strokeColor('#d1d5db').lineWidth(0.5)
       .moveTo(MARGIN, y + rowH).lineTo(MARGIN + CONTENT_W, y + rowH).stroke();
     doc.moveTo(MARGIN + specColW, y).lineTo(MARGIN + specColW, y + rowH).stroke();
     doc.moveTo(MARGIN + specColW + valColW, y).lineTo(MARGIN + specColW + valColW, y + rowH).stroke();
 
-    doc.fillColor('#1f2937').font('Helvetica-Bold').fontSize(8.5)
+    doc.fillColor('#111827').font('Helvetica-Bold').fontSize(9.5)
       .text(label, MARGIN + 6, y + rowPad, { width: specColW - 12 });
-    doc.fillColor('#000000').font('Helvetica').fontSize(8.5)
+    doc.fillColor('#000000').font('Helvetica').fontSize(9.5)
       .text(cleanA, MARGIN + specColW + 6, y + rowPad, { width: valColW - 12 });
     doc.text(cleanB, MARGIN + specColW + valColW + 6, y + rowPad, { width: valColW - 12 });
 
