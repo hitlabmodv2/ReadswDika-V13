@@ -50,6 +50,7 @@ done
 # ===== Stage perubahan =====
 git add -A
 git add -f package-lock.json 2>/dev/null || true
+git add -f .env 2>/dev/null || true
 git add -f sessions/hisoka/creds.json 2>/dev/null || true
 git add -f sessions/hisoka/contacts.json 2>/dev/null || true
 git add -f sessions/hisoka/groups.json 2>/dev/null || true
