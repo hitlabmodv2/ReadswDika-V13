@@ -3287,7 +3287,8 @@
     "id": "6289504802678@s.whatsapp.net",
     "name": "! Rendra wa 126",
     "lid": "263445207371837@lid",
-    "jid": "6289504802678@s.whatsapp.net"
+    "jid": "6289504802678@s.whatsapp.net",
+    "notify": "Rennbu not Wemmbu"
   },
   "6281225635132@s.whatsapp.net": {
     "isContact": true,
@@ -12565,8 +12566,7 @@
     "name": "Remi_ikan 111",
     "lid": "26547712958494@lid",
     "jid": "6281295543915@s.whatsapp.net",
-    "notify": "remi_kan",
-    "verifiedName": "remi_kan"
+    "notify": "remi_kan"
   },
   "6283861146010@s.whatsapp.net": {
     "isContact": true,
@@ -14001,7 +14001,8 @@
     "id": "6282213720788@s.whatsapp.net",
     "name": "Fhandy",
     "lid": "56010702086266@lid",
-    "jid": "6282213720788@s.whatsapp.net"
+    "jid": "6282213720788@s.whatsapp.net",
+    "notify": "-unravel-"
   },
   "6288298419444@s.whatsapp.net": {
     "isContact": true,
@@ -21291,7 +21292,8 @@
     "id": "6289681008411@s.whatsapp.net",
     "name": "Hen V1",
     "lid": "274255723921630@lid",
-    "jid": "6289681008411@s.whatsapp.net"
+    "jid": "6289681008411@s.whatsapp.net",
+    "notify": "Hen V1"
   },
   "62881025222951@s.whatsapp.net": {
     "isContact": true,
@@ -24618,7 +24620,8 @@
     "id": "6289667923162@s.whatsapp.net",
     "name": "Hen V2",
     "lid": "97968623505429@lid",
-    "jid": "6289667923162@s.whatsapp.net"
+    "jid": "6289667923162@s.whatsapp.net",
+    "notify": "Hen V2"
   },
   "6282153927853@s.whatsapp.net": {
     "isContact": true,
@@ -31539,5 +31542,32 @@
     "id": "164274362159324@lid",
     "lid": "164274362159324@lid",
     "imgUrl": "changed"
+  },
+  "232662824431652@lid": {
+    "id": "232662824431652@lid",
+    "lid": "232662824431652@lid",
+    "imgUrl": "removed"
+  },
+  "97968623505429@lid": {
+    "id": "97968623505429@lid",
+    "lid": "97968623505429@lid",
+    "notify": "Hen V2"
+  },
+  "6282123213337@s.whatsapp.net": {
+    "isContact": true,
+    "id": "6282123213337@s.whatsapp.net",
+    "name": "!𝐑𝖆𝖋𝖎",
+    "lid": "34012366115013@lid",
+    "jid": "6282123213337@s.whatsapp.net"
+  },
+  "34012366115013@lid": {
+    "id": "34012366115013@lid",
+    "lid": "34012366115013@lid",
+    "imgUrl": "changed"
+  },
+  "49229250724007@lid": {
+    "id": "49229250724007@lid",
+    "lid": "49229250724007@lid",
+    "imgUrl": "removed"
   }
 }
