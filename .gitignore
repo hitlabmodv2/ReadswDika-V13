@@ -6,7 +6,6 @@ vite.config.ts.*
 .upm
 tmp/
 bin/
-.env
 .replit
 replit.md
 .local
