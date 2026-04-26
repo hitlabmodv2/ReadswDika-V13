@@ -12418,8 +12418,7 @@
     "id": "6288247569901@s.whatsapp.net",
     "name": "🗿 Fariq",
     "lid": "4213446820079@lid",
-    "jid": "6288247569901@s.whatsapp.net",
-    "notify": "Aii Gntng😎"
+    "jid": "6288247569901@s.whatsapp.net"
   },
   "6289668675533@s.whatsapp.net": {
     "isContact": true,
@@ -12567,7 +12566,8 @@
     "name": "Remi_ikan 111",
     "lid": "26547712958494@lid",
     "jid": "6281295543915@s.whatsapp.net",
-    "notify": "remi_kan"
+    "notify": "remi_kan",
+    "verifiedName": "remi_kan"
   },
   "6283861146010@s.whatsapp.net": {
     "isContact": true,
@@ -14002,8 +14002,7 @@
     "id": "6282213720788@s.whatsapp.net",
     "name": "Fhandy",
     "lid": "56010702086266@lid",
-    "jid": "6282213720788@s.whatsapp.net",
-    "notify": "-unravel-"
+    "jid": "6282213720788@s.whatsapp.net"
   },
   "6288298419444@s.whatsapp.net": {
     "isContact": true,
@@ -18521,7 +18520,9 @@
     "id": "6282268990535@s.whatsapp.net",
     "name": "√ Miku",
     "lid": "38642156306452@lid",
-    "jid": "6282268990535@s.whatsapp.net"
+    "jid": "6282268990535@s.whatsapp.net",
+    "notify": "Otaku Hakase",
+    "verifiedName": "Otaku Hakase"
   },
   "6285871034018@s.whatsapp.net": {
     "isContact": true,
@@ -31545,46 +31546,19 @@
     "lid": "164274362159324@lid",
     "imgUrl": "changed"
   },
-  "232662824431652@lid": {
-    "id": "232662824431652@lid",
-    "lid": "232662824431652@lid",
-    "imgUrl": "removed"
-  },
-  "97968623505429@lid": {
-    "id": "97968623505429@lid",
-    "lid": "97968623505429@lid",
-    "notify": "Hen V2"
-  },
-  "6282123213337@s.whatsapp.net": {
-    "isContact": true,
-    "id": "6282123213337@s.whatsapp.net",
-    "name": "!𝐑𝖆𝖋𝖎",
-    "lid": "34012366115013@lid",
-    "jid": "6282123213337@s.whatsapp.net"
-  },
-  "34012366115013@lid": {
-    "id": "34012366115013@lid",
-    "lid": "34012366115013@lid",
+  "63462487134320@lid": {
+    "id": "63462487134320@lid",
+    "lid": "63462487134320@lid",
     "imgUrl": "changed"
   },
-  "49229250724007@lid": {
-    "id": "49229250724007@lid",
-    "lid": "49229250724007@lid",
-    "imgUrl": "removed"
+  "250315240681621@lid": {
+    "id": "250315240681621@lid",
+    "lid": "250315240681621@lid",
+    "imgUrl": "changed"
   },
-  "61074569195749@lid": {
-    "id": "61074569195749@lid",
-    "lid": "61074569195749@lid",
-    "imgUrl": "removed"
-  },
-  "45552473489488@lid": {
-    "id": "45552473489488@lid",
-    "lid": "45552473489488@lid",
-    "imgUrl": "removed"
-  },
-  "114456885502012@lid": {
-    "id": "114456885502012@lid",
-    "lid": "114456885502012@lid",
+  "2203452489902@lid": {
+    "id": "2203452489902@lid",
+    "lid": "2203452489902@lid",
     "imgUrl": "changed"
   }
 }
