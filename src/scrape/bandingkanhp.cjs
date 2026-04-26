@@ -117,8 +117,49 @@ function parseVariantParts(variant = '') {
   return null;
 }
 
-// ── Unified spec rows ────────────────────────────────────────────────────────
-// Setiap entry: icon, label, cara ambil nilai teks, cara ambil nilai numerik (opsional), arah (higher/lower)
+// ── Kategori GSMArena (urutan tampilan) ──────────────────────────────────────
+
+const CATEGORY_ORDER = [
+  'Network', 'Launch', 'Body', 'Display', 'Platform',
+  'Memory', 'Main Camera', 'Selfie camera', 'Sound',
+  'Comms', 'Features', 'Battery', 'Misc', 'Our Tests',
+];
+
+const CATEGORY_EMOJI = {
+  'Network': '📡',
+  'Launch': '🚀',
+  'Body': '📐',
+  'Display': '🖥️',
+  'Platform': '⚙️',
+  'Memory': '💾',
+  'Main Camera': '📷',
+  'Selfie camera': '🤳',
+  'Sound': '🔊',
+  'Comms': '📶',
+  'Features': '✨',
+  'Battery': '🔋',
+  'Misc': '📋',
+  'Our Tests': '🧪',
+};
+
+// Spec yg bisa diadu numeric → arah pemenang. Key: "Category::Label"
+// higher=true berarti angka lebih besar = lebih bagus
+const NUMERIC_SCORE = {
+  'Display::Size':           { parse: parseFirstNum, higher: true },
+  'Display::Type':           { parse: parseMhz,      higher: true },  // refresh rate Hz
+  'Memory::Internal':        { parse: parseMaxGb,    higher: true },  // storage GB
+  'Main Camera::Single':     { parse: parseMaxMp,    higher: true },
+  'Main Camera::Dual':       { parse: parseMaxMp,    higher: true },
+  'Main Camera::Triple':     { parse: parseMaxMp,    higher: true },
+  'Main Camera::Quad':       { parse: parseMaxMp,    higher: true },
+  'Selfie camera::Single':   { parse: parseFirstNum, higher: true },
+  'Selfie camera::Dual':     { parse: parseMaxMp,    higher: true },
+  'Battery::Type':           { parse: parseFirstNum, higher: true },  // mAh
+  'Battery::Charging':       { parse: parseFirstNum, higher: true },  // W
+  'Body::Weight':            { parse: parseFirstNum, higher: false }, // gram (lebih ringan = bagus)
+};
+
+// ── Legacy SPEC_ROWS (dipakai utk highlight pemenang ringkas) ─────────────────
 
 const SPEC_ROWS = [
   {
@@ -370,6 +411,37 @@ function buildRows(a, b, variantA = '', variantB = '') {
   return { rows, winsA, winsB, draws, pctA, pctB };
 }
 
+/** Bersihkan & ringkas value spec multi-line dari GSMArena */
+function cleanValue(val) {
+  if (!val) return '';
+  return String(val)
+    .split('\n')
+    .map(l => l.trim())
+    .filter(Boolean)
+    .join(' | ')
+    .trim();
+}
+
+/**
+ * Override value Memory::Internal sesuai variant pilihan user.
+ * Mengembalikan { txt, num } baru jika di-override, atau null kalau ga perlu override.
+ */
+function applyVariantOverride(cat, label, originalText, variant) {
+  if (!variant) return null;
+  if (cat !== 'Memory' || label !== 'Internal') return null;
+  const v = parseVariantParts(variant);
+  if (!v) return null;
+  let txt;
+  if (v.ram > 0 && v.storage > 0) {
+    txt = `${v.storage}${v.storageUnit} ${v.ram}GB RAM`;
+  } else if (v.storage > 0) {
+    txt = `${v.storage}${v.storageUnit}`;
+  } else {
+    return null;
+  }
+  return { txt };
+}
+
 function formatComparison(a, b, variantA = '', variantB = '') {
   const nameA = a.name || 'HP A';
   const nameB = b.name || 'HP B';
@@ -381,7 +453,8 @@ function formatComparison(a, b, variantA = '', variantB = '') {
   const idrA   = a.priceInfo?.idr ? 'Rp ' + Math.round(a.priceInfo.idr).toLocaleString('id-ID') : null;
   const idrB   = b.priceInfo?.idr ? 'Rp ' + Math.round(b.priceInfo.idr).toLocaleString('id-ID') : null;
 
-  const { rows, winsA, winsB, draws, pctA, pctB } = buildRows(a, b, variantA, variantB);
+  // Skor keseluruhan tetap pakai SPEC_ROWS (yg sudah dilengkapi variant override)
+  const { winsA, winsB, draws, pctA, pctB } = buildRows(a, b, variantA, variantB);
   const overallWinner = winsA > winsB ? labelA : winsB > winsA ? labelB : null;
 
   let out = '';
@@ -419,21 +492,78 @@ function formatComparison(a, b, variantA = '', variantB = '') {
   }
   out += `│\n`;
 
-  // ── Semua spesifikasi ──
-  out += `├─「 📋 *SPESIFIKASI DETAIL* 」\n`;
+  // ── Semua spesifikasi (loop dinamis dari semua kategori GSMArena) ──
+  out += `├─「 📋 *SPESIFIKASI LENGKAP* 」\n`;
 
-  for (const row of rows) {
-    const mA = row.winnerA ? ' 🏆' : '';
-    const mB = row.winnerB ? ' 🏆' : '';
+  // Gabung urutan: pakai CATEGORY_ORDER dulu, lalu kategori lain yg muncul tapi belum tercakup
+  const allCats = new Set([
+    ...CATEGORY_ORDER,
+    ...Object.keys(a.specs || {}),
+    ...Object.keys(b.specs || {}),
+  ]);
+
+  for (const cat of allCats) {
+    const catA = (a.specs && a.specs[cat]) || null;
+    const catB = (b.specs && b.specs[cat]) || null;
+    if (!catA && !catB) continue;
+
+    // Kumpulkan semua label di kategori ini (dari A & B)
+    const labels = [];
+    const seen = new Set();
+    if (catA) for (const k of Object.keys(catA)) { if (!seen.has(k)) { seen.add(k); labels.push(k); } }
+    if (catB) for (const k of Object.keys(catB)) { if (!seen.has(k)) { seen.add(k); labels.push(k); } }
+    if (!labels.length) continue;
+
+    // Cek apakah kategori ini punya minimal 1 nilai
+    let hasContent = false;
+    for (const lbl of labels) {
+      const va = catA?.[lbl];
+      const vb = catB?.[lbl];
+      if ((va && va !== '-') || (vb && vb !== '-')) { hasContent = true; break; }
+    }
+    if (!hasContent) continue;
+
+    const emoji = CATEGORY_EMOJI[cat] || '📌';
     out += `│\n`;
-    out += `│ ${row.icon} *${row.label}*\n`;
-    out += `│ 🅰️ ${row.valA}${mA}\n`;
-    out += `│ 🅱️ ${row.valB}${mB}\n`;
+    out += `│ ${emoji} *${cat.toUpperCase()}*\n`;
+
+    for (const lbl of labels) {
+      let txtA = cleanValue(catA?.[lbl]);
+      let txtB = cleanValue(catB?.[lbl]);
+
+      // Variant override (RAM/Storage)
+      const ovA = applyVariantOverride(cat, lbl, txtA, variantA);
+      const ovB = applyVariantOverride(cat, lbl, txtB, variantB);
+      if (ovA) txtA = ovA.txt;
+      if (ovB) txtB = ovB.txt;
+
+      if ((!txtA || txtA === '-') && (!txtB || txtB === '-')) continue;
+
+      // Tentukan pemenang utk row numeric
+      let mA = '', mB = '';
+      const scoreCfg = NUMERIC_SCORE[`${cat}::${lbl}`];
+      if (scoreCfg) {
+        const numA = txtA ? scoreCfg.parse(txtA) : 0;
+        const numB = txtB ? scoreCfg.parse(txtB) : 0;
+        if (numA > 0 && numB > 0 && numA !== numB) {
+          if (scoreCfg.higher) {
+            if (numA > numB) mA = ' 🏆'; else mB = ' 🏆';
+          } else {
+            if (numA < numB) mA = ' 🏆'; else mB = ' 🏆';
+          }
+        } else if (numA > 0 && numB === 0) mA = ' 🏆';
+        else if (numB > 0 && numA === 0)   mB = ' 🏆';
+      }
+
+      out += `│  • *${lbl}*\n`;
+      out += `│    🅰️ ${shortVal(txtA || '—', 80)}${mA}\n`;
+      out += `│    🅱️ ${shortVal(txtB || '—', 80)}${mB}\n`;
+    }
   }
 
   out += `│\n`;
   out += `╰────────────────────\n`;
-  out += `_📡 Realtime GSMArena • .cekhp untuk detail lengkap_`;
+  out += `_📡 Realtime GSMArena • .cekhp untuk detail per HP_`;
 
   return out;
 }
