@@ -3152,110 +3152,14 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                                 break;
                                         }
 
-                                        const { cekHP, searchHP, getHPImage, formatHPSpecs } = _require(path.resolve('./src/scrape/cekhp.cjs'));
+                                        const { cekHP, getHPImage, formatHPSpecs } = _require(path.resolve('./src/scrape/cekhp.cjs'));
                                         await hisoka.sendMessage(m.from, { react: { text: '🔎', key: m.key } });
-                                        const loadingMsg = await tolak(hisoka, m, `🔎 Mencari *${input}* di database GSMArena...`);
+                                        const loadingMsg = await tolak(hisoka, m, `🔎 Mencari data spesifikasi *${input}* + estimasi harga pasar Indonesia...`);
 
-                                        // Ambil top 5 kandidat
-                                        const candidates = await searchHP(input, 5);
-
-                                        // Hapus loading message
-                                        if (loadingMsg?.key) {
-                                                try { await hisoka.sendMessage(m.from, { delete: loadingMsg.key }); } catch (_) {}
-                                        }
-
-                                        // Cek apakah hasil ambigu:
-                                        // Dominan = exact match (dari pilihan tombol) ATAU score 1.5x lebih tinggi dari runner-up
-                                        const isDominant = candidates.length === 0 ||
-                                                candidates.length === 1 ||
-                                                candidates[0].exactMatch ||
-                                                (candidates[1] && candidates[0].score >= candidates[1].score * 1.5);
-
-                                        if (!isDominant && candidates.length > 1) {
-                                                // ── TAMPILKAN PILIHAN ALTERNATIF ──
-                                                const emojis = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣'];
-                                                let altText =
-                                                        `╭─「 📱 *HASIL PENCARIAN* 」\n` +
-                                                        `│\n` +
-                                                        `│ Ditemukan *${candidates.length} HP* yang cocok\n` +
-                                                        `│ dengan pencarian *"${input}"*.\n` +
-                                                        `│\n` +
-                                                        `│ Ketuk tombol atau balas angka:\n` +
-                                                        `│\n`;
-
-                                                candidates.forEach((c, i) => {
-                                                        altText += `│ ${emojis[i]} ${c.name}\n`;
-                                                });
-                                                altText += `╰────────────────────`;
-
-                                                // Buat quick_reply buttons (max 5, kompatibel semua WA)
-                                                const buttons = candidates.map((c, i) => ({
-                                                        name: 'quick_reply',
-                                                        buttonParamsJson: JSON.stringify({
-                                                                display_text: `${emojis[i]} ${c.name}`,
-                                                                id: `${pfx}cekhp ${c.name}`
-                                                        })
-                                                }));
-
-                                                let btnSent = false;
-                                                try {
-                                                        await m.reply({
-                                                                interactiveMessage: {
-                                                                        contextInfo: {
-                                                                                stanzaId: m.key.id,
-                                                                                participant: m.sender,
-                                                                                quotedMessage: m.message,
-                                                                        },
-                                                                        title: altText,
-                                                                        footer: `📱 Pilih HP · GSMArena Realtime`,
-                                                                        buttons,
-                                                                }
-                                                        });
-                                                        btnSent = true;
-                                                } catch (_) {}
-
-                                                // Fallback teks kalau interactiveMessage gagal (WA lama)
-                                                if (!btnSent) {
-                                                        await tolak(hisoka, m, altText +
-                                                                `\n\n_Balas dengan: *${pfx}cekhp <nama HP>*_`
-                                                        );
-                                                }
-
-                                                await hisoka.sendMessage(m.from, { react: { text: '🔍', key: m.key } });
-                                                break;
-                                        }
-
-                                        // ── HASIL LANGSUNG (tidak ambigu) ──
-                                        if (!candidates.length) {
-                                                throw new Error(`HP "${input}" tidak ditemukan.\nCoba tulis lebih lengkap, contoh: *.cekhp Samsung Galaxy A55*`);
-                                        }
-
-                                        const selectedName = candidates[0].name;
-                                        const loadingMsg2 = await m.reply({
-                                                interactiveMessage: {
-                                                        contextInfo: {
-                                                                stanzaId: m.key.id,
-                                                                participant: m.sender,
-                                                                quotedMessage: m.message,
-                                                        },
-                                                        title:
-                                                                `╭─「 📱 *CEK HP* 」\n` +
-                                                                `│\n` +
-                                                                `│ ⏳ Mengambil spesifikasi...\n` +
-                                                                `│\n` +
-                                                                `│ 📲 *${selectedName}*\n` +
-                                                                `│\n` +
-                                                                `│ Mohon tunggu sebentar...\n` +
-                                                                `╰────────────────────`,
-                                                        footer: `🌐 Sumber: GSMArena Realtime`,
-                                                        buttons: [],
-                                                }
-                                        }).catch(() => tolak(hisoka, m, `⏳ Mengambil spesifikasi *${selectedName}* dari GSMArena...`));
-
-                                        const result = await cekHP(selectedName);
+                                        const result = await cekHP(input);
                                         let report = formatHPSpecs(result);
 
-                                        // Estimasi harga pasaran Indonesia via Gemini AI
+                                        // Estimasi harga pasaran Indonesia via Gemini AI — inject langsung di blok harga
                                         let aiPriceBlock = '';
                                         try {
                                                 const pi = result.priceInfo;
@@ -3283,8 +3187,8 @@ export default async function ({ message, type: messagesType }, hisoka) {
 
                                         const imgBuf = await getHPImage(result.image, result.bigpicUrl).catch(() => null);
 
-                                        if (loadingMsg2?.key) {
-                                                try { await hisoka.sendMessage(m.from, { delete: loadingMsg2.key }); } catch (_) {}
+                                        if (loadingMsg?.key) {
+                                                try { await hisoka.sendMessage(m.from, { delete: loadingMsg.key }); } catch (_) {}
                                         }
 
                                         if (imgBuf && imgBuf.length > 500) {

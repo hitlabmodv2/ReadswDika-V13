@@ -338,32 +338,6 @@ async function enrichWithPrice(detail) {
   };
 }
 
-/**
- * Cari top-N HP yang cocok dengan query.
- * Dipakai untuk tampil alternatif pilihan ketika query ambigu.
- */
-async function searchHP(query, limit = 5) {
-  const queryTerms = normalize(query).split(' ').filter(t => t.length >= 2);
-  if (!queryTerms.length) return [];
-
-  const { brandMap, phones } = await fetchQuickSearch(query);
-
-  const scored = phones
-    .map(phone => ({ phone, score: scorePhone(phone, queryTerms) }))
-    .filter(x => x.score >= 1)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
-
-  const queryNorm = normalize(query);
-  return scored.map(({ phone, score }) => {
-    const [brandId, phoneId, fullName, , imgFile] = phone;
-    const slug = (imgFile || '').replace('.jpg', '');
-    const brand = brandMap[String(brandId)] || '';
-    const exactMatch = normalize(fullName) === queryNorm;
-    return { name: fullName, brand, url: `${BASE}/${slug}-${phoneId}.php`, score, exactMatch };
-  });
-}
-
 async function cekHP(query) {
   if (!query || !query.trim()) throw new Error('Nama HP tidak boleh kosong.');
   const q = query.trim();
@@ -510,4 +484,4 @@ function formatHPSpecs(data) {
   return body.trimEnd();
 }
 
-module.exports = { cekHP, searchHP, getHPImage, formatHPSpecs };
+module.exports = { cekHP, getHPImage, formatHPSpecs };
