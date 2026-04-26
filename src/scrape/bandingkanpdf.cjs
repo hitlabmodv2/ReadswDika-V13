@@ -19,10 +19,22 @@ const CATEGORY_EMOJI_TXT = {
   'Our Tests': 'Our Tests',
 };
 
+// Urutan kategori: yang PALING PENTING di atas
 const CATEGORY_ORDER = [
-  'Network', 'Launch', 'Body', 'Display', 'Platform',
-  'Memory', 'Main Camera', 'Selfie camera', 'Sound',
-  'Comms', 'Features', 'Battery', 'Misc', 'Our Tests',
+  'Platform',       // Chipset, CPU, GPU, OS
+  'Memory',         // RAM + Storage
+  'Display',        // Layar
+  'Main Camera',    // Kamera belakang
+  'Selfie camera',  // Kamera depan
+  'Battery',        // Baterai + charging
+  'Body',           // Dimensi, berat, build
+  'Network',        // Jaringan
+  'Comms',          // WiFi, BT, NFC, USB
+  'Sound',          // Speaker, jack
+  'Features',       // Sensor
+  'Launch',         // Tanggal rilis
+  'Misc',           // Warna, model, harga, SAR
+  'Our Tests',      // Benchmark
 ];
 
 function clean(v) {
@@ -120,13 +132,7 @@ async function buildComparisonPDF(result) {
   doc.text(`B: ${priceB}${idrB ? '  |  ' + idrB : ''}`, MARGIN + 10, y + 36, { width: CONTENT_W - 20 });
   y += 60;
 
-  // ── SPEC TABLES PER CATEGORY ────────────────────────────────────────────
-  const allCats = new Set([
-    ...CATEGORY_ORDER,
-    ...Object.keys(specsA || {}),
-    ...Object.keys(specsB || {}),
-  ]);
-
+  // Konstanta layout tabel (dipakai oleh ringkasan & spec tables di bawah)
   const specColW = 130;
   const valColW = (CONTENT_W - specColW) / 2;
   const rowPad = 6;
@@ -137,6 +143,80 @@ async function buildComparisonPDF(result) {
       y = MARGIN;
     }
   }
+
+  // ── RINGKASAN SPEK PENTING (highlight box) ──────────────────────────────
+  const pick = (specs, cat, keys) => {
+    const c = specs?.[cat];
+    if (!c) return '-';
+    for (const k of keys) {
+      const v = c[k];
+      if (v && String(v).trim() !== '-') return clean(v);
+    }
+    return '-';
+  };
+  const summary = [
+    { label: 'Chipset',   a: pick(specsA, 'Platform', ['Chipset']),       b: pick(specsB, 'Platform', ['Chipset']) },
+    { label: 'OS',        a: pick(specsA, 'Platform', ['OS']),            b: pick(specsB, 'Platform', ['OS']) },
+    { label: 'RAM/Storage', a: pick(specsA, 'Memory', ['Internal']),      b: pick(specsB, 'Memory', ['Internal']) },
+    { label: 'Layar',     a: pick(specsA, 'Display', ['Size','Type']),    b: pick(specsB, 'Display', ['Size','Type']) },
+    { label: 'Resolusi',  a: pick(specsA, 'Display', ['Resolution']),     b: pick(specsB, 'Display', ['Resolution']) },
+    { label: 'Kamera Utama', a: pick(specsA, 'Main Camera', ['Triple','Quad','Dual','Single']),
+                              b: pick(specsB, 'Main Camera', ['Triple','Quad','Dual','Single']) },
+    { label: 'Kamera Depan', a: pick(specsA, 'Selfie camera', ['Single','Dual']),
+                              b: pick(specsB, 'Selfie camera', ['Single','Dual']) },
+    { label: 'Baterai',   a: pick(specsA, 'Battery', ['Type']),           b: pick(specsB, 'Battery', ['Type']) },
+    { label: 'Charging',  a: pick(specsA, 'Battery', ['Charging']),       b: pick(specsB, 'Battery', ['Charging']) },
+  ];
+
+  // Header bar
+  doc.roundedRect(MARGIN, y, CONTENT_W, 22, 3).fill('#059669');
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(11)
+    .text('RINGKASAN SPEK PENTING', MARGIN + 10, y + 6);
+  doc.fillColor('#000000');
+  y += 22;
+
+  // Sub-header
+  doc.rect(MARGIN, y, specColW, 18).fill('#d1fae5');
+  doc.rect(MARGIN + specColW, y, valColW, 18).fill('#dbeafe');
+  doc.rect(MARGIN + specColW + valColW, y, valColW, 18).fill('#fee2e2');
+  doc.fillColor('#000000').font('Helvetica-Bold').fontSize(8);
+  doc.text('Spesifikasi', MARGIN + 6, y + 5, { width: specColW - 12 });
+  doc.text('A', MARGIN + specColW + 6, y + 5, { width: valColW - 12 });
+  doc.text('B', MARGIN + specColW + valColW + 6, y + 5, { width: valColW - 12 });
+  y += 18;
+
+  let zebraSum = false;
+  for (const r of summary) {
+    doc.font('Helvetica').fontSize(8.5);
+    const hL = doc.heightOfString(r.label, { width: specColW - 12 });
+    const hA = doc.heightOfString(r.a, { width: valColW - 12 });
+    const hB = doc.heightOfString(r.b, { width: valColW - 12 });
+    const rowH = Math.max(hL, hA, hB) + 12;
+    ensureSpace(rowH);
+    if (zebraSum) doc.rect(MARGIN, y, CONTENT_W, rowH).fill('#f0fdf4');
+    doc.strokeColor('#d1fae5').lineWidth(0.5)
+      .moveTo(MARGIN, y + rowH).lineTo(MARGIN + CONTENT_W, y + rowH).stroke();
+    doc.moveTo(MARGIN + specColW, y).lineTo(MARGIN + specColW, y + rowH).stroke();
+    doc.moveTo(MARGIN + specColW + valColW, y).lineTo(MARGIN + specColW + valColW, y + rowH).stroke();
+    doc.fillColor('#065f46').font('Helvetica-Bold').fontSize(8.5)
+      .text(r.label, MARGIN + 6, y + 6, { width: specColW - 12 });
+    doc.fillColor('#000000').font('Helvetica').fontSize(8.5)
+      .text(r.a, MARGIN + specColW + 6, y + 6, { width: valColW - 12 });
+    doc.text(r.b, MARGIN + specColW + valColW + 6, y + 6, { width: valColW - 12 });
+    y += rowH;
+    zebraSum = !zebraSum;
+  }
+  y += 12;
+
+  // ── SPEC TABLES PER CATEGORY ────────────────────────────────────────────
+  // Tabel spek lengkap: hanya kategori yg BELUM dirangkum di RINGKASAN biar gak dobel.
+  // Tapi kita tetap loop semua, kecuali "Platform/Memory/Display/Main Camera/Selfie camera/Battery"
+  // -- TIDAK, user mau spek lengkap juga. Jadi tetap loop semua kategori sesuai CATEGORY_ORDER.
+  const allCats = new Set([
+    ...CATEGORY_ORDER,
+    ...Object.keys(specsA || {}),
+    ...Object.keys(specsB || {}),
+  ]);
 
   function drawCategoryHeader(catName) {
     ensureSpace(28);
