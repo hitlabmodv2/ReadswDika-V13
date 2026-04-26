@@ -24,6 +24,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 
 const BASE = 'https://www.gsmarena.com';
+const QUICKSEARCH_URL = 'https://www.gsmarena.com/quicksearch-8020.jpg';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 const HEADERS = {
@@ -33,35 +34,10 @@ const HEADERS = {
   'Referer': BASE + '/'
 };
 
-// GSMArena brand IDs
-const BRAND_LIST = [
-  { names: ['samsung', 'galaxy'], slug: 'samsung', id: 9 },
-  { names: ['apple', 'iphone', 'ipad'], slug: 'apple', id: 48 },
-  { names: ['xiaomi', 'mi ', 'mi-', '^mi '], slug: 'xiaomi', id: 80 },
-  { names: ['redmi'], slug: 'xiaomi', id: 80 },
-  { names: ['poco'], slug: 'xiaomi', id: 80 },
-  { names: ['oneplus', 'one plus'], slug: 'oneplus', id: 149 },
-  { names: ['oppo'], slug: 'oppo', id: 82 },
-  { names: ['vivo'], slug: 'vivo', id: 98 },
-  { names: ['realme'], slug: 'realme', id: 1826 },
-  { names: ['google', 'pixel'], slug: 'google', id: 1967 },
-  { names: ['huawei'], slug: 'huawei', id: 58 },
-  { names: ['honor'], slug: 'honor', id: 2854 },
-  { names: ['nokia'], slug: 'nokia', id: 61 },
-  { names: ['motorola', 'moto '], slug: 'motorola', id: 256 },
-  { names: ['sony', 'xperia'], slug: 'sony', id: 7 },
-  { names: ['lg '], slug: 'lg', id: 20 },
-  { names: ['asus', 'zenfone', 'rog phone'], slug: 'asus', id: 46 },
-  { names: ['nothing', 'nothing phone'], slug: 'nothing', id: 2253 },
-  { names: ['infinix'], slug: 'infinix', id: 1760 },
-  { names: ['tecno'], slug: 'tecno', id: 2339 },
-  { names: ['itel'], slug: 'itel', id: 2434 },
-  { names: ['lenovo'], slug: 'lenovo', id: 73 },
-  { names: ['htc'], slug: 'htc', id: 45 },
-  { names: ['blackberry'], slug: 'blackberry', id: 36 },
-  { names: ['meizu'], slug: 'meizu', id: 74 },
-  { names: ['zte'], slug: 'zte', id: 62 },
-];
+// Cache quicksearch data (berlaku 30 menit)
+let _quickCache = null;
+let _quickCacheTime = 0;
+const CACHE_TTL = 30 * 60 * 1000;
 
 function cleanText(str = '') {
   return String(str || '').replace(/\s+/g, ' ').trim();
@@ -71,85 +47,107 @@ function normalize(str = '') {
   return str.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function detectBrand(query) {
-  const q = normalize(query);
-  for (const brand of BRAND_LIST) {
-    for (const name of brand.names) {
-      const n = name.replace(/[\^]/g, '').trim();
-      if (q.startsWith(n) || q.includes(' ' + n) || q.includes(n + ' ')) {
-        return brand;
-      }
-    }
+/**
+ * Ambil daftar semua HP dari GSMArena quicksearch API.
+ * Tidak perlu BRAND_LIST — semua brand langsung dari server GSMArena.
+ * Response: [ brandMap{id->name}, [ [brandId, phoneId, name, keywords, img, short], ... ] ]
+ */
+async function fetchQuickSearch(query) {
+  const now = Date.now();
+  // Gunakan cache kalau masih fresh dan tidak ada query spesifik baru
+  if (_quickCache && (now - _quickCacheTime) < CACHE_TTL) {
+    return _quickCache;
   }
-  return null;
+
+  const { data } = await axios.get(QUICKSEARCH_URL, {
+    params: { sSearchStr: 'all', nCount: 9999 },
+    headers: HEADERS,
+    timeout: 15000
+  });
+
+  // data[0] = brand map { id: brandName }
+  // data[1] = array of [brandId, phoneId, fullName, keywords, imgFile, shortName]
+  const brandMap = data[0] || {};
+  const phones = Array.isArray(data[1]) ? data[1] : [];
+
+  _quickCache = { brandMap, phones };
+  _quickCacheTime = now;
+  return _quickCache;
 }
 
-function scoreMatch(queryTerms, phoneName) {
-  const pn = normalize(phoneName);
-  const pTerms = pn.split(' ').filter(Boolean);
+/**
+ * Scoring: seberapa relevan sebuah phone dengan query user.
+ * Makin tinggi skor = makin cocok.
+ */
+function scorePhone(phone, queryTerms) {
+  const [brandId, phoneId, fullName, keywords, imgFile, shortName] = phone;
+  const nameLower = normalize(fullName);
+  const keyLower = (keywords || '').toLowerCase();
+  const shortLower = normalize(shortName || '');
+  const imgLower = (imgFile || '').toLowerCase().replace('.jpg', '').replace(/-/g, ' ');
+
+  const nameTerms = nameLower.split(' ').filter(Boolean);
   let score = 0;
+  let matched = 0;
 
   for (const qt of queryTerms) {
-    if (pTerms.includes(qt)) score += 3;
-    else if (pTerms.some(pt => pt === qt || (pt.includes(qt) && qt.length >= 3))) score += 1;
-    else if (qt.length >= 2 && pn.includes(qt)) score += 0.5;
+    if (qt.length < 2) continue;
+
+    // Exact match di nama lengkap
+    if (nameTerms.includes(qt)) { score += 5; matched++; continue; }
+
+    // Exact match di keywords
+    if (keyLower.includes(qt)) { score += 4; matched++; continue; }
+
+    // Partial match di nama
+    if (nameLower.includes(qt)) { score += 3; matched++; continue; }
+
+    // Match di shortname
+    if (shortLower.includes(qt)) { score += 2; matched++; continue; }
+
+    // Match di image slug (nama file sering = nama HP)
+    if (imgLower.includes(qt)) { score += 1; matched++; continue; }
   }
 
-  const extraTerms = pTerms.filter(pt => !queryTerms.some(qt => pt.includes(qt) || qt.includes(pt)));
-  score -= extraTerms.length * 0.3;
+  // Penalti kalau nama HP punya banyak kata yang tidak ada di query
+  const extraTerms = nameTerms.filter(nt => !queryTerms.some(qt => nt.includes(qt) || qt.includes(nt)));
+  score -= extraTerms.length * 0.2;
+
+  // Bonus kalau semua term query cocok
+  if (matched === queryTerms.length) score += 3;
 
   return score;
 }
 
-async function fetchBrandPage(slug, brandId, page = 1) {
-  let url;
-  if (page === 1) {
-    url = `${BASE}/${slug}-phones-f-${brandId}-0-r1-p1.php`;
-  } else {
-    url = `${BASE}/${slug}-phones-f-${brandId}-0-r1-p${page}.php`;
-  }
-
-  const { data } = await axios.get(url, { headers: HEADERS, timeout: 12000 });
-  return data;
-}
-
-async function findPhoneInBrand(brand, query) {
+/**
+ * Cari HP terbaik dari quicksearch berdasarkan query.
+ * Support semua brand yang ada di GSMArena secara realtime.
+ */
+async function findPhone(query) {
   const queryTerms = normalize(query).split(' ').filter(t => t.length >= 2);
-  const maxPages = 5;
-  let bestMatch = null;
+  if (!queryTerms.length) throw new Error('Query terlalu pendek.');
+
+  const { brandMap, phones } = await fetchQuickSearch(query);
+
+  let bestPhone = null;
   let bestScore = 0;
 
-  for (let page = 1; page <= maxPages; page++) {
-    let html;
-    try {
-      html = await fetchBrandPage(brand.slug, brand.id, page);
-    } catch (_) {
-      break;
+  for (const phone of phones) {
+    const score = scorePhone(phone, queryTerms);
+    if (score > bestScore) {
+      bestScore = score;
+      bestPhone = phone;
     }
-
-    const $ = cheerio.load(html);
-    const items = $('.makers ul li');
-    if (!items.length) break;
-
-    items.each((_, el) => {
-      const a = $(el).find('a');
-      const href = a.attr('href') || '';
-      const rawName = cleanText(a.text());
-
-      if (!href || !rawName) return;
-
-      const score = scoreMatch(queryTerms, rawName);
-      if (score > bestScore) {
-        bestScore = score;
-        bestMatch = { name: rawName, url: `${BASE}/${href}` };
-      }
-    });
-
-    if (bestScore >= queryTerms.length * 2) break;
   }
 
-  if (!bestMatch || bestScore < 1) return null;
-  return bestMatch;
+  if (!bestPhone || bestScore < 1) return null;
+
+  const [brandId, phoneId, fullName, keywords, imgFile] = bestPhone;
+  const slug = (imgFile || '').replace('.jpg', '');
+  const url = `${BASE}/${slug}-${phoneId}.php`;
+  const brand = brandMap[String(brandId)] || '';
+
+  return { name: fullName, brand, url, score: bestScore };
 }
 
 async function fetchPhonePage(url) {
@@ -169,7 +167,7 @@ function buildHdImageUrl(bigpicUrl) {
 }
 
 function extractNum(str) {
-  return parseFloat(str.replace(/,/g, ''));
+  return parseFloat(String(str).replace(/,/g, ''));
 }
 
 function extractUsdPrice(priceStr = '') {
@@ -344,17 +342,13 @@ async function cekHP(query) {
   if (!query || !query.trim()) throw new Error('Nama HP tidak boleh kosong.');
   const q = query.trim();
 
-  const brand = detectBrand(q);
-  if (!brand) {
-    throw new Error(
-      `Brand HP tidak dikenali dari nama "${q}".\n` +
-      `Contoh: Samsung, iPhone, Xiaomi, Redmi, Poco, OnePlus, Oppo, Vivo, Realme, Google Pixel, dll.`
-    );
-  }
-
-  const match = await findPhoneInBrand(brand, q);
+  const match = await findPhone(q);
   if (!match) {
-    throw new Error(`HP "${q}" tidak ditemukan. Coba tulis nama lebih lengkap atau tepat.`);
+    throw new Error(
+      `HP "${q}" tidak ditemukan di database GSMArena.\n` +
+      `Coba tulis nama lebih lengkap, contoh:\n` +
+      `• Samsung Galaxy A55\n• iPhone 16 Pro Max\n• Redmi Note 13 Pro\n• Vivo V40`
+    );
   }
 
   const html = await fetchPhonePage(match.url);
@@ -454,7 +448,6 @@ function formatHPSpecs(data) {
   if (fans) body += `❤️ Fans: ${fans}\n`;
   body += `\n`;
 
-  // ── HARGA (paling atas) ──
   body += `💰 *HARGA*\n`;
   if (priceInfo) {
     if (priceInfo.raw) {
