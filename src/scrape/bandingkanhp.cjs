@@ -663,9 +663,12 @@ async function bandingkanHP(rawQueryA, rawQueryB) {
     getHPImage(b.image, b.bigpicUrl).catch(() => null),
   ]);
 
+  // Gabung 2 foto jadi 1 gambar side-by-side (realtime, masing-masing dari URL GSMArena-nya)
+  const combined = await buildCombinedImage(imgA, imgB).catch(() => null);
+
   const text = formatComparison(a, b, variantA, variantB);
 
-  return { a, b, imgA, imgB, text, variantA, variantB };
+  return { a, b, imgA, imgB, combined, text, variantA, variantB };
 }
 
 module.exports = { bandingkanHP, formatComparison, buildRows, buildCombinedImage };
