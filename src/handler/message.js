@@ -3253,6 +3253,7 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                         const queryB = sepMatch[2].trim();
 
                                         const { bandingkanHP } = _require(path.resolve('./src/scrape/bandingkanhp.cjs'));
+                                        const { buildComparisonPDF } = _require(path.resolve('./src/scrape/bandingkanpdf.cjs'));
                                         await hisoka.sendMessage(m.from, { react: { text: '🔎', key: m.key } });
                                         const loadingMsg = await tolak(hisoka, m,
                                                 `🔎 Mencari data *${queryA}* dan *${queryB}*...\nMohon tunggu sebentar ⏳`
@@ -3288,6 +3289,23 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                         } else {
                                                 // Tidak ada gambar, kirim teks saja
                                                 await hisoka.sendMessage(m.from, { text: result.text }, { quoted: m });
+                                        }
+
+                                        // Pesan kedua: kirim PDF rapih berisi foto + spek lengkap
+                                        try {
+                                                const pdfBuf = await buildComparisonPDF(result);
+                                                if (pdfBuf && pdfBuf.length > 500) {
+                                                        const safeA = (result.a.name || 'A').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
+                                                        const safeB = (result.b.name || 'B').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
+                                                        await hisoka.sendMessage(m.from, {
+                                                                document: pdfBuf,
+                                                                mimetype: 'application/pdf',
+                                                                fileName: `Bandingkan_${safeA}_vs_${safeB}.pdf`,
+                                                                caption: `📄 *Versi PDF rapih*\n${result.a.name} vs ${result.b.name}`,
+                                                        }, { quoted: m });
+                                                }
+                                        } catch (pdfErr) {
+                                                console.error('\x1b[31m[BandingkanHP][PDF] Error:\x1b[39m', pdfErr.message);
                                         }
 
                                         await hisoka.sendMessage(m.from, { react: { text: '✅', key: m.key } });

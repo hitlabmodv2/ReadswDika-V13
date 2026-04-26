@@ -43,6 +43,7 @@
     "instagram-url-direct": "^2.0.7",
     "jintr": "^3.3.1",
     "node-shazam": "^1.2.7",
+    "pdfkit": "^0.18.0",
     "pino": "^10.1.0",
     "play-dl": "^1.9.7",
     "qrcode": "^1.5.4",
