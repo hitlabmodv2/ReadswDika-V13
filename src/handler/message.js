@@ -3165,9 +3165,10 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                         }
 
                                         // Cek apakah hasil ambigu:
-                                        // Dominan = score pertama >= 1.5x score kedua (jelas menang jauh)
+                                        // Dominan = exact match (dari pilihan tombol) ATAU score 1.5x lebih tinggi dari runner-up
                                         const isDominant = candidates.length === 0 ||
                                                 candidates.length === 1 ||
+                                                candidates[0].exactMatch ||
                                                 (candidates[1] && candidates[0].score >= candidates[1].score * 1.5);
 
                                         if (!isDominant && candidates.length > 1) {
@@ -3229,9 +3230,29 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                                 throw new Error(`HP "${input}" tidak ditemukan.\nCoba tulis lebih lengkap, contoh: *.cekhp Samsung Galaxy A55*`);
                                         }
 
-                                        const loadingMsg2 = await tolak(hisoka, m, `⚙️ Mengambil spesifikasi *${candidates[0].name}*...`);
+                                        const selectedName = candidates[0].name;
+                                        const loadingMsg2 = await m.reply({
+                                                interactiveMessage: {
+                                                        contextInfo: {
+                                                                stanzaId: m.key.id,
+                                                                participant: m.sender,
+                                                                quotedMessage: m.message,
+                                                        },
+                                                        title:
+                                                                `╭─「 📱 *CEK HP* 」\n` +
+                                                                `│\n` +
+                                                                `│ ⏳ Mengambil spesifikasi...\n` +
+                                                                `│\n` +
+                                                                `│ 📲 *${selectedName}*\n` +
+                                                                `│\n` +
+                                                                `│ Mohon tunggu sebentar...\n` +
+                                                                `╰────────────────────`,
+                                                        footer: `🌐 Sumber: GSMArena Realtime`,
+                                                        buttons: [],
+                                                }
+                                        }).catch(() => tolak(hisoka, m, `⏳ Mengambil spesifikasi *${selectedName}* dari GSMArena...`));
 
-                                        const result = await cekHP(input);
+                                        const result = await cekHP(selectedName);
                                         let report = formatHPSpecs(result);
 
                                         // Estimasi harga pasaran Indonesia via Gemini AI

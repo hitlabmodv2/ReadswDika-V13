@@ -354,11 +354,13 @@ async function searchHP(query, limit = 5) {
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 
+  const queryNorm = normalize(query);
   return scored.map(({ phone, score }) => {
     const [brandId, phoneId, fullName, , imgFile] = phone;
     const slug = (imgFile || '').replace('.jpg', '');
     const brand = brandMap[String(brandId)] || '';
-    return { name: fullName, brand, url: `${BASE}/${slug}-${phoneId}.php`, score };
+    const exactMatch = normalize(fullName) === queryNorm;
+    return { name: fullName, brand, url: `${BASE}/${slug}-${phoneId}.php`, score, exactMatch };
   });
 }
 
