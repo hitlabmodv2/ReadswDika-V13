@@ -3264,34 +3264,29 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                                 try { await hisoka.sendMessage(m.from, { delete: loadingMsg.key }); } catch (_) {}
                                         }
 
-                                        // Kirim 2 foto kepisah dalam 1 ALBUM + caption full perbandingan
+                                        // Kirim 2 foto kepisah dalam 1 ALBUM, caption full spek nempel di foto pertama
                                         const hasImgA = result.imgA && result.imgA.length > 500;
                                         const hasImgB = result.imgB && result.imgB.length > 500;
-                                        const nameA = result.variantA ? `${result.a.name} (${result.variantA})` : result.a.name;
                                         const nameB = result.variantB ? `${result.b.name} (${result.variantB})` : result.b.name;
 
                                         if (hasImgA && hasImgB) {
-                                                // 1 album: foto A + foto B (kepisah, dalam 1 grup)
+                                                // 1 album: foto A (caption = full spek) + foto B (caption = nama B)
                                                 await hisoka.sendMessage(m.from, {
                                                         albumMessage: [
-                                                                { image: result.imgA, caption: `🅰️ *${nameA}*` },
+                                                                { image: result.imgA, caption: result.text },
                                                                 { image: result.imgB, caption: `🅱️ *${nameB}*` },
                                                         ]
                                                 }, { quoted: m });
-                                                // Teks perbandingan full sebagai pesan terpisah (no truncate)
-                                                await hisoka.sendMessage(m.from, { text: result.text }, { quoted: m });
                                         } else if (hasImgA) {
                                                 await hisoka.sendMessage(m.from, {
                                                         image: result.imgA,
-                                                        caption: `🅰️ *${nameA}*`
+                                                        caption: result.text
                                                 }, { quoted: m });
-                                                await hisoka.sendMessage(m.from, { text: result.text }, { quoted: m });
                                         } else if (hasImgB) {
                                                 await hisoka.sendMessage(m.from, {
                                                         image: result.imgB,
-                                                        caption: `🅱️ *${nameB}*`
+                                                        caption: result.text
                                                 }, { quoted: m });
-                                                await hisoka.sendMessage(m.from, { text: result.text }, { quoted: m });
                                         } else {
                                                 // Tidak ada gambar, kirim teks saja
                                                 await hisoka.sendMessage(m.from, { text: result.text }, { quoted: m });
