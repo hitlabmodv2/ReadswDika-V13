@@ -3264,35 +3264,38 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                                 try { await hisoka.sendMessage(m.from, { delete: loadingMsg.key }); } catch (_) {}
                                         }
 
-                                        // Kirim gambar kedua HP sebagai album kalau ada
-                                        const imgs = [];
-                                        const caps = [];
-                                        if (result.imgA && result.imgA.length > 500) {
-                                                imgs.push(result.imgA);
-                                                const vA = result.variantA ? ` (${result.variantA})` : '';
-                                                caps.push(`🅰️ *${result.a.name}${vA}*`);
-                                        }
-                                        if (result.imgB && result.imgB.length > 500) {
-                                                imgs.push(result.imgB);
-                                                const vB = result.variantB ? ` (${result.variantB})` : '';
-                                                caps.push(`🅱️ *${result.b.name}${vB}*`);
+                                        // Kirim gambar + teks perbandingan sebagai caption (reply ke pesan user)
+                                        const hasImgA = result.imgA && result.imgA.length > 500;
+                                        const hasImgB = result.imgB && result.imgB.length > 500;
+                                        const nameA = result.variantA ? `${result.a.name} (${result.variantA})` : result.a.name;
+                                        const nameB = result.variantB ? `${result.b.name} (${result.variantB})` : result.b.name;
+
+                                        if (hasImgA && hasImgB) {
+                                                // Kirim foto HP A dengan full caption perbandingan sebagai reply
+                                                await hisoka.sendMessage(m.from, {
+                                                        image: result.imgA,
+                                                        caption: result.text
+                                                }, { quoted: m });
+                                                // Kirim foto HP B sebagai pesan tambahan
+                                                await hisoka.sendMessage(m.from, {
+                                                        image: result.imgB,
+                                                        caption: `🅱️ *${nameB}*`
+                                                }, { quoted: m });
+                                        } else if (hasImgA) {
+                                                await hisoka.sendMessage(m.from, {
+                                                        image: result.imgA,
+                                                        caption: result.text
+                                                }, { quoted: m });
+                                        } else if (hasImgB) {
+                                                await hisoka.sendMessage(m.from, {
+                                                        image: result.imgB,
+                                                        caption: result.text
+                                                }, { quoted: m });
+                                        } else {
+                                                // Tidak ada gambar, kirim teks saja
+                                                await hisoka.sendMessage(m.from, { text: result.text }, { quoted: m });
                                         }
 
-                                        if (imgs.length === 2) {
-                                                try {
-                                                        const albumItems = imgs.map((buf, i) => ({ image: buf, caption: caps[i] }));
-                                                        await hisoka.sendMessage(m.from, { albumMessage: albumItems }, { quoted: m });
-                                                } catch (_) {
-                                                        for (let i = 0; i < imgs.length; i++) {
-                                                                await hisoka.sendMessage(m.from, { image: imgs[i], caption: caps[i] }, { quoted: i === 0 ? m : undefined });
-                                                        }
-                                                }
-                                        } else if (imgs.length === 1) {
-                                                await hisoka.sendMessage(m.from, { image: imgs[0], caption: caps[0] }, { quoted: m });
-                                        }
-
-                                        // Kirim teks perbandingan sebagai reply ke pesan user
-                                        await hisoka.sendMessage(m.from, { text: result.text }, { quoted: m });
                                         await hisoka.sendMessage(m.from, { react: { text: '✅', key: m.key } });
                                         logCommand(m, hisoka, 'bandingkan');
                                 } catch (error) {

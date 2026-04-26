@@ -29,231 +29,295 @@ function getSpec(specs, cat, keys) {
   if (!catData) return null;
   for (const k of keys) {
     const v = catData[k];
-    if (v && v !== '-') return v.split('\n')[0].trim();
+    if (v && String(v).trim() !== '-') {
+      return String(v).split('\n')[0].trim();
+    }
   }
   return null;
 }
 
-function shortVal(val, max = 38) {
+function shortVal(val, max = 45) {
   if (!val) return '—';
   const s = String(val).replace(/\s+/g, ' ').trim();
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
 
-/** Ambil angka terbesar dari string, mis. "8GB RAM, 128GB" → max(8,128) */
-function parseMaxNum(str = '') {
-  const nums = [...String(str).matchAll(/[\d]+(?:\.\d+)?/g)].map(m => parseFloat(m[0]));
+function parseMaxGb(str = '') {
+  const m = [...String(str).matchAll(/(\d+(?:\.\d+)?)\s*GB/gi)].map(x => parseFloat(x[1]));
+  return m.length ? Math.max(...m) : 0;
+}
+
+function parseRamGb(str = '') {
+  const m = String(str).match(/(\d+(?:\.\d+)?)\s*GB\s+RAM/i)
+    || String(str).match(/RAM[:\s]+(\d+(?:\.\d+)?)\s*GB/i);
+  return m ? parseFloat(m[1]) : 0;
+}
+
+function parseFirstNum(str = '') {
+  const m = String(str).match(/(\d+(?:\.\d+)?)/);
+  return m ? parseFloat(m[1]) : 0;
+}
+
+function parseMhz(str = '') {
+  const m = String(str).match(/(\d+)\s*Hz/i);
+  return m ? parseFloat(m[1]) : 0;
+}
+
+function parseMaxMp(str = '') {
+  const nums = [...String(str).matchAll(/(\d+(?:\.\d+)?)\s*MP/gi)].map(x => parseFloat(x[1]));
   return nums.length ? Math.max(...nums) : 0;
 }
 
-/** Ambil angka pertama dari string */
-function parseFirstNum(str = '') {
-  const m = String(str).match(/[\d]+(?:\.\d+)?/);
-  return m ? parseFloat(m[0]) : 0;
+function progressBar(pct, width = 10) {
+  const filled = Math.round((pct / 100) * width);
+  return '█'.repeat(Math.max(0, filled)) + '░'.repeat(Math.max(0, width - filled));
 }
 
-/** Bersihkan query dari varian RAM/storage: "vivo v50 lite 8gb/128gb" → "vivo v50 lite" */
-function stripVariant(query = '') {
-  return query
-    .replace(/\b\d+\s*gb\s*[\/+]\s*\d+\s*gb\b/gi, '')
-    .replace(/\b\d+\s*gb\b/gi, '')
-    .replace(/\b\d+\s*tb\b/gi, '')
-    .replace(/\s+/g, ' ')
+/** Strip varian RAM/storage dari query: "vivo v50 lite 8gb/128gb" → "vivo v50 lite" */
+function stripVariant(q = '') {
+  return q
+    .replace(/\b\d+\s*GB\s*[\/+]\s*\d+\s*GB\b/gi, '')
+    .replace(/\b\d+\s*GB\b/gi, '')
+    .replace(/\b\d+\s*TB\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
     .trim();
 }
 
-// ── Scoring engine ────────────────────────────────────────────────────────────
+function extractVariant(q = '') {
+  const m = q.match(/\b(\d+\s*GB\s*[\/+]\s*\d+\s*GB)\b/i)
+    || q.match(/\b(\d+\s*GB)\b/i);
+  return m ? m[1].replace(/\s+/g, '').toUpperCase() : '';
+}
 
-/**
- * Setiap kategori punya extractor dan arah (higher=better atau lower=better).
- * Return: [ numA, numB ] atau [ valA, valB ] untuk perbandingan teks.
- */
-const SCORE_CATEGORIES = [
+// ── Unified spec rows ────────────────────────────────────────────────────────
+// Setiap entry: icon, label, cara ambil nilai teks, cara ambil nilai numerik (opsional), arah (higher/lower)
+
+const SPEC_ROWS = [
   {
-    id: 'ram',
-    label: 'RAM',
-    icon: '🧠',
-    extract: (specs) => {
-      const v = getSpec(specs, 'Memory', ['Internal']);
+    icon: '🤖', label: 'OS',
+    getText: s => getSpec(s, 'Platform', ['OS']),
+    getNum: null,
+  },
+  {
+    icon: '⚙️', label: 'Chipset',
+    getText: s => getSpec(s, 'Platform', ['Chipset']),
+    getNum: null,
+  },
+  {
+    icon: '🖥️', label: 'CPU',
+    getText: s => getSpec(s, 'Platform', ['CPU']),
+    getNum: null,
+  },
+  {
+    icon: '🎮', label: 'GPU',
+    getText: s => getSpec(s, 'Platform', ['GPU']),
+    getNum: null,
+  },
+  {
+    icon: '🧠', label: 'RAM',
+    getText: s => {
+      const v = getSpec(s, 'Memory', ['Internal']);
       if (!v) return null;
-      // "8GB RAM, 128GB" → ambil angka sebelum "RAM"
-      const m = v.match(/([\d.]+)\s*GB\s+RAM/i);
-      return m ? parseFloat(m[1]) : null;
+      const r = parseRamGb(v);
+      return r ? r + ' GB' : null;
+    },
+    getNum: s => {
+      const v = getSpec(s, 'Memory', ['Internal']);
+      return v ? parseRamGb(v) : 0;
     },
     higher: true,
     unit: 'GB',
   },
   {
-    id: 'storage',
-    label: 'Storage',
-    icon: '💾',
-    extract: (specs) => {
-      const v = getSpec(specs, 'Memory', ['Internal']);
+    icon: '💾', label: 'Storage',
+    getText: s => {
+      const v = getSpec(s, 'Memory', ['Internal']);
       if (!v) return null;
-      // "8GB RAM, 128GB" atau "128GB 8GB RAM" → angka terbesar yg bukan RAM
-      const m = v.match(/([\d]+)\s*GB(?!\s*RAM)/gi);
-      if (!m) return null;
-      const vals = m.map(s => parseFloat(s));
-      return Math.max(...vals);
+      const gb = parseMaxGb(v);
+      return gb ? gb + ' GB' : null;
+    },
+    getNum: s => {
+      const v = getSpec(s, 'Memory', ['Internal']);
+      return v ? parseMaxGb(v) : 0;
     },
     higher: true,
     unit: 'GB',
   },
   {
-    id: 'battery',
-    label: 'Baterai',
-    icon: '🔋',
-    extract: (specs) => {
-      const v = getSpec(specs, 'Battery', ['Type']);
-      return v ? parseFirstNum(v) : null;
-    },
-    higher: true,
-    unit: 'mAh',
+    icon: '💽', label: 'RAM & Storage (lengkap)',
+    getText: s => getSpec(s, 'Memory', ['Internal']),
+    getNum: null,
   },
   {
-    id: 'charging',
-    label: 'Charging',
-    icon: '⚡',
-    extract: (specs) => {
-      const v = getSpec(specs, 'Battery', ['Charging']);
-      return v ? parseFirstNum(v) : null;
-    },
-    higher: true,
-    unit: 'W',
-  },
-  {
-    id: 'maincam',
-    label: 'Kamera Utama',
-    icon: '📷',
-    extract: (specs) => {
-      const v = getSpec(specs, 'Main Camera', ['Triple', 'Quad', 'Dual', 'Single']);
-      return v ? parseMaxNum(v) : null;
-    },
-    higher: true,
-    unit: 'MP',
-  },
-  {
-    id: 'selfiecam',
-    label: 'Kamera Depan',
-    icon: '🤳',
-    extract: (specs) => {
-      const v = getSpec(specs, 'Selfie camera', ['Single', 'Dual']);
-      return v ? parseFirstNum(v) : null;
-    },
-    higher: true,
-    unit: 'MP',
-  },
-  {
-    id: 'display_size',
-    label: 'Layar',
-    icon: '🖥️',
-    extract: (specs) => {
-      const v = getSpec(specs, 'Display', ['Size']);
-      return v ? parseFirstNum(v) : null;
+    icon: '📺', label: 'Layar',
+    getText: s => getSpec(s, 'Display', ['Size']),
+    getNum: s => {
+      const v = getSpec(s, 'Display', ['Size']);
+      return v ? parseFirstNum(v) : 0;
     },
     higher: true,
     unit: '"',
   },
   {
-    id: 'refresh',
-    label: 'Refresh Rate',
-    icon: '🔄',
-    extract: (specs) => {
-      const v = getSpec(specs, 'Display', ['Type']);
-      const m = (v || '').match(/(\d+)Hz/i);
-      return m ? parseFloat(m[1]) : null;
+    icon: '🎨', label: 'Panel',
+    getText: s => getSpec(s, 'Display', ['Type']),
+    getNum: s => {
+      const v = getSpec(s, 'Display', ['Type']);
+      return v ? parseMhz(v) : 0;
     },
     higher: true,
     unit: 'Hz',
   },
   {
-    id: 'weight',
-    label: 'Bobot',
-    icon: '⚖️',
-    extract: (specs) => {
-      const v = getSpec(specs, 'Body', ['Weight']);
-      return v ? parseFirstNum(v) : null;
+    icon: '🔍', label: 'Resolusi',
+    getText: s => getSpec(s, 'Display', ['Resolution']),
+    getNum: null,
+  },
+  {
+    icon: '📷', label: 'Kamera Utama',
+    getText: s => getSpec(s, 'Main Camera', ['Triple', 'Quad', 'Dual', 'Single']),
+    getNum: s => {
+      const v = getSpec(s, 'Main Camera', ['Triple', 'Quad', 'Dual', 'Single']);
+      return v ? parseMaxMp(v) : 0;
     },
-    higher: false, // lebih ringan = lebih baik
+    higher: true,
+    unit: 'MP',
+  },
+  {
+    icon: '🤳', label: 'Kamera Depan',
+    getText: s => getSpec(s, 'Selfie camera', ['Single', 'Dual']),
+    getNum: s => {
+      const v = getSpec(s, 'Selfie camera', ['Single', 'Dual']);
+      return v ? parseFirstNum(v) : 0;
+    },
+    higher: true,
+    unit: 'MP',
+  },
+  {
+    icon: '🔋', label: 'Baterai',
+    getText: s => getSpec(s, 'Battery', ['Type']),
+    getNum: s => {
+      const v = getSpec(s, 'Battery', ['Type']);
+      return v ? parseFirstNum(v) : 0;
+    },
+    higher: true,
+    unit: 'mAh',
+  },
+  {
+    icon: '⚡', label: 'Charging',
+    getText: s => getSpec(s, 'Battery', ['Charging']),
+    getNum: s => {
+      const v = getSpec(s, 'Battery', ['Charging']);
+      return v ? parseFirstNum(v) : 0;
+    },
+    higher: true,
+    unit: 'W',
+  },
+  {
+    icon: '📡', label: 'NFC',
+    getText: s => getSpec(s, 'Comms', ['NFC']),
+    getNum: null,
+  },
+  {
+    icon: '📶', label: 'WiFi',
+    getText: s => getSpec(s, 'Comms', ['WLAN']),
+    getNum: null,
+  },
+  {
+    icon: '🔵', label: 'Bluetooth',
+    getText: s => getSpec(s, 'Comms', ['Bluetooth']),
+    getNum: null,
+  },
+  {
+    icon: '🛡️', label: 'Tahan Air',
+    getText: s => getSpec(s, 'Body', ['Protection']),
+    getNum: null,
+  },
+  {
+    icon: '📐', label: 'Dimensi',
+    getText: s => getSpec(s, 'Body', ['Dimensions']),
+    getNum: null,
+  },
+  {
+    icon: '⚖️', label: 'Berat',
+    getText: s => getSpec(s, 'Body', ['Weight']),
+    getNum: s => {
+      const v = getSpec(s, 'Body', ['Weight']);
+      return v ? parseFirstNum(v) : 0;
+    },
+    higher: false,  // lebih ringan lebih baik
     unit: 'g',
+  },
+  {
+    icon: '🚀', label: 'Rilis',
+    getText: s => getSpec(s, 'Launch', ['Announced']),
+    getNum: null,
+  },
+  {
+    icon: '💰', label: 'Harga Global',
+    getText: s => null,  // ditangani manual
+    getNum: null,
   },
 ];
 
-/** Jalankan scoring dan kembalikan skor detail */
-function scorePhones(a, b) {
+// ── Scoring + format ──────────────────────────────────────────────────────────
+
+function buildRows(a, b) {
   let winsA = 0, winsB = 0, draws = 0;
   const rows = [];
 
-  for (const cat of SCORE_CATEGORIES) {
-    const numA = cat.extract(a.specs);
-    const numB = cat.extract(b.specs);
+  for (const row of SPEC_ROWS) {
+    if (row.label === 'Harga Global') continue; // ditangani manual
 
-    if (numA === null && numB === null) continue;
+    const txtA = row.getText(a.specs);
+    const txtB = row.getText(b.specs);
+    if (!txtA && !txtB) continue;
 
     let winnerA = false, winnerB = false;
 
-    if (numA !== null && numB !== null && numA !== numB) {
-      if (cat.higher) {
-        winnerA = numA > numB;
-        winnerB = numB > numA;
-      } else {
-        winnerA = numA < numB;
-        winnerB = numB < numA;
-      }
-      if (winnerA) winsA++;
-      else if (winnerB) winsB++;
-    } else if (numA === numB && numA !== null) {
-      draws++;
-    } else if (numA !== null && numB === null) {
-      winnerA = true; winsA++;
-    } else if (numB !== null && numA === null) {
-      winnerB = true; winsB++;
+    if (row.getNum) {
+      const numA = row.getNum(a.specs) || 0;
+      const numB = row.getNum(b.specs) || 0;
+      if (numA > 0 && numB > 0 && numA !== numB) {
+        if (row.higher) { winnerA = numA > numB; winnerB = numB > numA; }
+        else             { winnerA = numA < numB; winnerB = numB < numA; }
+        if (winnerA) winsA++;
+        else if (winnerB) winsB++;
+      } else if (numA > 0 && numB === 0) { winnerA = true; winsA++; }
+      else if (numB > 0 && numA === 0)   { winnerB = true; winsB++; }
+      else if (numA === numB && numA > 0) draws++;
     }
 
-    const displayA = numA !== null ? `${numA}${cat.unit}` : '—';
-    const displayB = numB !== null ? `${numB}${cat.unit}` : '—';
-
-    rows.push({ cat, displayA, displayB, winnerA, winnerB, numA, numB });
+    rows.push({
+      icon: row.icon,
+      label: row.label,
+      valA: shortVal(txtA),
+      valB: shortVal(txtB),
+      winnerA,
+      winnerB,
+    });
   }
 
-  const total = winsA + winsB + draws;
-  const pctA = total > 0 ? Math.round((winsA / (winsA + winsB || 1)) * 100) : 50;
+  const scored = winsA + winsB;
+  const pctA = scored > 0 ? Math.round((winsA / scored) * 100) : 50;
   const pctB = 100 - pctA;
 
   return { rows, winsA, winsB, draws, pctA, pctB };
 }
 
-// ── Bar chart ASCII ──────────────────────────────────────────────────────────
-
-function progressBar(pct, width = 10) {
-  const filled = Math.round((pct / 100) * width);
-  return '█'.repeat(filled) + '░'.repeat(width - filled);
-}
-
-// ── Format teks perbandingan ─────────────────────────────────────────────────
-
 function formatComparison(a, b, variantA = '', variantB = '') {
   const nameA = a.name || 'HP A';
   const nameB = b.name || 'HP B';
-
   const labelA = variantA ? `${nameA} (${variantA})` : nameA;
   const labelB = variantB ? `${nameB} (${variantB})` : nameB;
 
-  const priceA = a.priceInfo?.raw ? a.priceInfo.raw.slice(0, 30) : '—';
-  const priceB = b.priceInfo?.raw ? b.priceInfo.raw.slice(0, 30) : '—';
+  const priceA = a.priceInfo?.raw ? a.priceInfo.raw.slice(0, 35) : '—';
+  const priceB = b.priceInfo?.raw ? b.priceInfo.raw.slice(0, 35) : '—';
+  const idrA   = a.priceInfo?.idr ? 'Rp ' + Math.round(a.priceInfo.idr).toLocaleString('id-ID') : null;
+  const idrB   = b.priceInfo?.idr ? 'Rp ' + Math.round(b.priceInfo.idr).toLocaleString('id-ID') : null;
 
-  const idrA = a.priceInfo?.idr
-    ? 'Rp ' + Math.round(a.priceInfo.idr).toLocaleString('id-ID')
-    : null;
-  const idrB = b.priceInfo?.idr
-    ? 'Rp ' + Math.round(b.priceInfo.idr).toLocaleString('id-ID')
-    : null;
-
-  const { rows, winsA, winsB, draws, pctA, pctB } = scorePhones(a, b);
-
+  const { rows, winsA, winsB, draws, pctA, pctB } = buildRows(a, b);
   const overallWinner = winsA > winsB ? labelA : winsB > winsA ? labelB : null;
-  const barA = progressBar(pctA);
-  const barB = progressBar(pctB);
 
   let out = '';
 
@@ -267,109 +331,63 @@ function formatComparison(a, b, variantA = '', variantB = '') {
   // ── Skor keseluruhan ──
   out += `├─「 🏆 *SKOR KESELURUHAN* 」\n`;
   out += `│\n`;
-  out += `│ 🅰️ [${barA}] ${pctA}%\n`;
-  out += `│ 🅱️ [${barB}] ${pctB}%\n`;
+  out += `│ 🅰️ [${progressBar(pctA)}] ${pctA}%\n`;
+  out += `│ 🅱️ [${progressBar(pctB)}] ${pctB}%\n`;
   out += `│\n`;
   if (overallWinner) {
-    out += `│ 🏆 *Pemenang: ${overallWinner}*\n`;
+    out += `│ 🥇 *Pemenang: ${overallWinner}*\n`;
   } else {
-    out += `│ 🤝 *Hasil: SERI*\n`;
+    out += `│ 🤝 *Hasil SERI*\n`;
   }
-  out += `│ _(${winsA} vs ${winsB} kategori`;
-  if (draws > 0) out += `, ${draws} seri`;
+  out += `│ _(Menang ${winsA} vs ${winsB} kategori`;
+  if (draws) out += `, ${draws} seri`;
   out += `)_\n`;
   out += `│\n`;
 
   // ── Harga ──
-  out += `├─「 💰 *Harga Global* 」\n`;
+  out += `├─「 💰 *Harga* 」\n`;
   out += `│ 🅰️ ${priceA}\n`;
   out += `│ 🅱️ ${priceB}\n`;
   if (idrA || idrB) {
-    out += `│\n`;
-    out += `├─「 🇮🇩 *Estimasi IDR* 」\n`;
-    if (idrA) out += `│ 🅰️ ${idrA}\n`;
-    if (idrB) out += `│ 🅱️ ${idrB}\n`;
+    out += `│ 🅰️ ${idrA || '—'} 🇮🇩\n`;
+    out += `│ 🅱️ ${idrB || '—'} 🇮🇩\n`;
   }
   out += `│\n`;
 
-  // ── Kategori detail ──
-  out += `├─「 ⚡ *Detail Perbandingan* 」\n`;
+  // ── Semua spesifikasi ──
+  out += `├─「 📋 *SPESIFIKASI DETAIL* 」\n`;
 
   for (const row of rows) {
-    const markerA = row.winnerA ? ' 🏆' : '';
-    const markerB = row.winnerB ? ' 🏆' : '';
+    const mA = row.winnerA ? ' 🏆' : '';
+    const mB = row.winnerB ? ' 🏆' : '';
     out += `│\n`;
-    out += `│ ${row.cat.icon} *${row.cat.label}*\n`;
-    out += `│ 🅰️ ${row.displayA}${markerA}\n`;
-    out += `│ 🅱️ ${row.displayB}${markerB}\n`;
-  }
-
-  // ── Spesifikasi teks (layar, chipset, OS, kamera teks, dll) ──
-  const TEXT_SPECS = [
-    { label: 'OS',        icon: '🤖', cat: 'Platform',      keys: ['OS'] },
-    { label: 'Chipset',   icon: '⚙️', cat: 'Platform',      keys: ['Chipset'] },
-    { label: 'CPU',       icon: '🖥️', cat: 'Platform',      keys: ['CPU'] },
-    { label: 'GPU',       icon: '🎮', cat: 'Platform',      keys: ['GPU'] },
-    { label: 'Layar Info',icon: '📺', cat: 'Display',       keys: ['Size'] },
-    { label: 'Panel',     icon: '🎨', cat: 'Display',       keys: ['Type'] },
-    { label: 'Resolusi',  icon: '🔍', cat: 'Display',       keys: ['Resolution'] },
-    { label: 'RAM+ROM',   icon: '💽', cat: 'Memory',        keys: ['Internal'] },
-    { label: 'Cam Utama', icon: '📸', cat: 'Main Camera',   keys: ['Triple','Quad','Dual','Single'] },
-    { label: 'Cam Depan', icon: '🤳', cat: 'Selfie camera', keys: ['Single','Dual'] },
-    { label: 'Baterai',   icon: '🔋', cat: 'Battery',       keys: ['Type'] },
-    { label: 'Charging',  icon: '⚡', cat: 'Battery',       keys: ['Charging'] },
-    { label: 'NFC',       icon: '📡', cat: 'Comms',         keys: ['NFC'] },
-    { label: 'Dimensi',   icon: '📐', cat: 'Body',          keys: ['Dimensions'] },
-    { label: 'Berat',     icon: '⚖️', cat: 'Body',          keys: ['Weight'] },
-    { label: 'Rilis',     icon: '🚀', cat: 'Launch',        keys: ['Announced'] },
-  ];
-
-  out += `│\n`;
-  out += `├─「 📋 *Spesifikasi Lengkap* 」\n`;
-
-  for (const sp of TEXT_SPECS) {
-    const vA = getSpec(a.specs, sp.cat, sp.keys);
-    const vB = getSpec(b.specs, sp.cat, sp.keys);
-    if (!vA && !vB) continue;
-    out += `│\n`;
-    out += `│ ${sp.icon} *${sp.label}*\n`;
-    out += `│ 🅰️ ${shortVal(vA)}\n`;
-    out += `│ 🅱️ ${shortVal(vB)}\n`;
+    out += `│ ${row.icon} *${row.label}*\n`;
+    out += `│ 🅰️ ${row.valA}${mA}\n`;
+    out += `│ 🅱️ ${row.valB}${mB}\n`;
   }
 
   out += `│\n`;
   out += `╰────────────────────\n`;
-  out += `_📡 Data realtime GSMArena • Gunakan .cekhp untuk detail penuh_`;
+  out += `_📡 Realtime GSMArena • .cekhp untuk detail lengkap_`;
 
   return out;
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
-/**
- * Fetch data + gambar kedua HP secara paralel.
- * variantA/variantB: string varian yg distrip dari query asli (misal "8GB/128GB")
- */
 async function bandingkanHP(rawQueryA, rawQueryB) {
-  // Ekstrak varian (misal "8GB/128GB") dari query user sebelum search
-  function extractVariant(q) {
-    const match = q.match(/\b(\d+\s*GB\s*[\/+]\s*\d+\s*GB)\b/i)
-      || q.match(/\b(\d+\s*GB)\b/i);
-    return match ? match[1].replace(/\s+/g, '').toUpperCase() : '';
-  }
-
   const variantA = extractVariant(rawQueryA);
   const variantB = extractVariant(rawQueryB);
+  const cleanA   = stripVariant(rawQueryA) || rawQueryA;
+  const cleanB   = stripVariant(rawQueryB) || rawQueryB;
 
-  const cleanA = stripVariant(rawQueryA);
-  const cleanB = stripVariant(rawQueryB);
-
-  // Fetch spesifikasi kedua HP dan gambarnya secara paralel
+  // Fetch spesifikasi paralel
   const [a, b] = await Promise.all([
-    cekHP(cleanA || rawQueryA),
-    cekHP(cleanB || rawQueryB),
+    cekHP(cleanA),
+    cekHP(cleanB),
   ]);
 
+  // Fetch gambar paralel
   const [imgA, imgB] = await Promise.all([
     getHPImage(a.image, a.bigpicUrl).catch(() => null),
     getHPImage(b.image, b.bigpicUrl).catch(() => null),
@@ -380,4 +398,4 @@ async function bandingkanHP(rawQueryA, rawQueryB) {
   return { a, b, imgA, imgB, text, variantA, variantB };
 }
 
-module.exports = { bandingkanHP, formatComparison, scorePhones };
+module.exports = { bandingkanHP, formatComparison, buildRows };
