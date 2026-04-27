@@ -302,7 +302,8 @@ action_create_branch() {
   git checkout -q "$DEFAULT_BRANCH" 2>/dev/null || true
 
   echo ""
-  echo -e "${C_DIM}Tekan ENTER untuk kembali ke menu...${C_RESET}"
+  echo -e "  ${C_GREEN}1${C_RESET} ${C_DIM}kembali ke menu${C_RESET}"
+  printf "${C_BOLD}▸ ${C_RESET}"
   read -r
 }
 
@@ -322,7 +323,8 @@ action_delete_branch() {
     echo -e "${C_YELLOW}ℹ️  Tidak ada branch yang bisa dihapus${C_RESET}"
     echo -e "${C_DIM}   (cuma branch default '${DEFAULT_BRANCH}' yang ada)${C_RESET}"
     echo ""
-    echo -e "${C_DIM}Tekan ENTER untuk kembali ke menu...${C_RESET}"
+    echo -e "  ${C_GREEN}1${C_RESET} ${C_DIM}kembali ke menu${C_RESET}"
+    printf "${C_BOLD}▸ ${C_RESET}"
     read -r
     return
   fi
@@ -459,7 +461,7 @@ action_delete_branch() {
   [ "$fail" -gt 0 ] && echo -e "  ${C_RED}❌ Gagal  : ${fail}${C_RESET}"
 
   echo ""
-  echo -e "  ${C_GREEN}1${C_RESET} ${C_DIM}kembali ke menu${C_RESET}  ${C_DIM}(atau ENTER)${C_RESET}"
+  echo -e "  ${C_GREEN}1${C_RESET} ${C_DIM}kembali ke menu${C_RESET}"
   printf "${C_BOLD}▸ ${C_RESET}"
   read -r
 }
@@ -532,10 +534,11 @@ goodbye_prompt() {
   echo -e "${C_DIM}─────────────────────────────────────${C_RESET}"
   echo -e "${C_BOLD}ℹ️  Keluar.${C_RESET}"
   echo -e "  ${C_GREEN}1${C_RESET} ${C_DIM}masuk lagi${C_RESET}"
-  echo -e "  ${C_RED}0${C_RESET} ${C_DIM}atau ENTER untuk benar-benar keluar${C_RESET}"
+  echo -e "  ${C_RED}0${C_RESET} ${C_DIM}benar-benar keluar${C_RESET}"
   printf "${C_BOLD}▸ ${C_RESET}"
   local back
   read -r back
+  back="${back:-1}"
   case "$back" in
     1|y|Y|yes|menu|m|M)
       main_loop
