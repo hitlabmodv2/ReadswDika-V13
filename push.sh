@@ -1,10 +1,32 @@
 #!/usr/bin/env bash
-# Cara pakai:
-#   bash push.sh                       → auto-detect tipe & scope dari file yang berubah
-#   bash push.sh "pesan commit kamu"   → pakai pesan custom (override auto)
+# ╔══════════════════════════════════════════════════════════╗
+# ║                                                          ║
+# ║              🚀  PUSH SCRIPT — BANG WILY  🚀             ║
+# ║                                                          ║
+# ║   Author : Bang Wily (Wilykun1994)                       ║
+# ║   Telegram: @Wilykun1994                                 ║
+# ║   Versi  : 1.0  •  Auto Commit + Auto Push               ║
+# ║                                                          ║
+# ╚══════════════════════════════════════════════════════════╝
 #
-# Token disimpan di file .token (di-ignore git, aman)
-# Edit USER & REPO di bawah kalau ganti repo.
+# 📌 Deskripsi:
+#   Script otomatis untuk commit & push ke GitHub.
+#   Pesan commit di-generate otomatis (Conventional Commits)
+#   berdasarkan file yang berubah — tipe (feat/fix/chore/deps)
+#   & scope (handler/scrape/helper/db/config) terdeteksi sendiri.
+#
+# 📱 Cara pakai (cocok di Termux / mobile shell):
+#   bash push.sh                       → auto-detect pesan commit
+#   bash push.sh "pesan commit kamu"   → pakai pesan custom
+#
+# 🔐 Keamanan:
+#   Token GitHub disimpan di file .token (di-ignore git, aman).
+#   Bikin file pertama kali :  echo 'ghp_xxxxxxxx' > .token
+#
+# ⚙️  Konfigurasi:
+#   Edit variabel USER & REPO di bawah kalau ganti repo target.
+#
+# ─────────────────────────────────────────────────────────────
 
 USER="hitlabmodv2"
 REPO="ReadswDika-V13"
