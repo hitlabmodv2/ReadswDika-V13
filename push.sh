@@ -211,7 +211,198 @@ banner() {
   echo ""
 }
 
-# ===== Menu pemilih branch =====
+# ===== Menu utama =====
+show_main_menu() {
+  banner
+  echo -e "${C_BOLD}🚀 GitHub:${C_RESET} ${C_CYAN}${USER}/${REPO}${C_RESET}"
+  echo ""
+  echo -e "  ${C_GREEN}1${C_RESET} upload script ${C_DIM}(pilih branch tujuan)${C_RESET}"
+  echo -e "  ${C_CYAN}2${C_RESET} buat branch baru"
+  echo -e "  ${C_YELLOW}3${C_RESET} hapus branch ${C_DIM}(default dilindungi)${C_RESET}"
+  echo -e "  ${C_RED}0${C_RESET} keluar"
+  echo ""
+  printf "${C_BOLD}Pilih [0/1/2/3] ▸ ${C_RESET}"
+
+  local pick
+  read -r pick
+  pick="${pick:-1}"
+
+  case "$pick" in
+    1) show_menu; run_upload ;;
+    2) action_create_branch ;;
+    3) action_delete_branch ;;
+    0|q|Q|exit) goodbye_prompt ;;
+    *)
+      echo -e "${C_RED}✖ Pilihan tidak valid: '${pick}'${C_RESET}"
+      sleep 1
+      ;;
+  esac
+}
+
+# ===== Action: buat branch baru =====
+action_create_branch() {
+  banner
+  echo -e "${C_BOLD}🌱 Buat branch baru${C_RESET}"
+  echo ""
+  printf "${C_DIM}Nama branch baru (kosong = batal) ▸ ${C_RESET}"
+  local name
+  read -r name
+  name=$(echo "$name" | tr -d '[:space:]')
+
+  if [ -z "$name" ]; then
+    echo -e "${C_YELLOW}↩ Dibatalkan.${C_RESET}"
+    sleep 1
+    return
+  fi
+
+  # Validasi nama (hanya alfanumerik, -, _, /, .)
+  if ! echo "$name" | grep -qE '^[a-zA-Z0-9._/-]+$'; then
+    echo -e "${C_RED}✖ Nama tidak valid${C_RESET} ${C_DIM}(hanya huruf, angka, - _ / .)${C_RESET}"
+    sleep 2
+    return
+  fi
+
+  # Cek apakah branch sudah ada (lokal atau remote)
+  if git show-ref --verify --quiet "refs/heads/${name}" \
+     || git ls-remote --heads origin "$name" 2>/dev/null | grep -q .; then
+    echo -e "${C_RED}✖ Branch '${name}' sudah ada.${C_RESET}"
+    sleep 2
+    return
+  fi
+
+  echo ""
+  echo -e "  ${C_CYAN}▸${C_RESET} bikin branch ${C_BOLD}${name}${C_RESET} dari ${DEFAULT_BRANCH}..."
+  if ! git checkout -q "$DEFAULT_BRANCH" 2>/dev/null; then
+    echo -e "${C_RED}✖ Gagal pindah ke ${DEFAULT_BRANCH}${C_RESET}"
+    sleep 2
+    return
+  fi
+  if ! git checkout -q -b "$name" 2>/dev/null; then
+    echo -e "${C_RED}✖ Gagal bikin branch lokal${C_RESET}"
+    sleep 2
+    return
+  fi
+
+  echo -e "  ${C_CYAN}▸${C_RESET} push ke remote..."
+  local push_log
+  push_log=$(mktemp)
+  if git push -u origin "$name" >"$push_log" 2>&1; then
+    echo ""
+    echo -e "  ${C_GREEN}🎉 Branch '${name}' berhasil dibuat & dipush!${C_RESET}"
+    echo -e "  ${C_BLUE}🔗 https://github.com/${USER}/${REPO}/tree/${name}${C_RESET}"
+  else
+    echo -e "  ${C_RED}❌ Gagal push branch baru${C_RESET}"
+    echo -e "  ${C_DIM}── error log ──${C_RESET}"
+    sed 's/^/    /' "$push_log" | tail -10
+  fi
+  rm -f "$push_log"
+
+  # Balik ke default
+  git checkout -q "$DEFAULT_BRANCH" 2>/dev/null || true
+
+  echo ""
+  echo -e "${C_DIM}Tekan ENTER untuk kembali ke menu...${C_RESET}"
+  read -r
+}
+
+# ===== Action: hapus branch =====
+action_delete_branch() {
+  banner
+  echo -e "${C_BOLD}🗑️  Hapus branch${C_RESET} ${C_DIM}(default '${DEFAULT_BRANCH}' dilindungi)${C_RESET}"
+  echo ""
+
+  local branches=()
+  while IFS= read -r b; do
+    [ -n "$b" ] && [ "$b" != "$DEFAULT_BRANCH" ] && branches+=("$b")
+  done < <(fetch_branches)
+
+  local total=${#branches[@]}
+  if [ "$total" -eq 0 ]; then
+    echo -e "${C_YELLOW}ℹ️  Tidak ada branch yang bisa dihapus${C_RESET}"
+    echo -e "${C_DIM}   (cuma branch default '${DEFAULT_BRANCH}' yang ada)${C_RESET}"
+    echo ""
+    echo -e "${C_DIM}Tekan ENTER untuk kembali ke menu...${C_RESET}"
+    read -r
+    return
+  fi
+
+  echo -e "${C_DIM}Branch yang bisa dihapus (${total}):${C_RESET}"
+  local i=1
+  for b in "${branches[@]}"; do
+    printf "  ${C_YELLOW}%2d${C_RESET} %s\n" "$i" "$b"
+    i=$((i + 1))
+  done
+  echo ""
+  echo -e "  ${C_RED} 0${C_RESET} batal"
+  echo ""
+  printf "${C_BOLD}Pilih branch ▸ ${C_RESET}"
+
+  local pick
+  read -r pick
+  pick="${pick:-0}"
+
+  if [ "$pick" = "0" ]; then
+    echo -e "${C_YELLOW}↩ Dibatalkan.${C_RESET}"
+    sleep 1
+    return
+  fi
+
+  if echo "$pick" | grep -qE '^[0-9]+$' && [ "$pick" -ge 1 ] && [ "$pick" -le "$total" ]; then
+    local target="${branches[$((pick - 1))]}"
+
+    # Proteksi double untuk default
+    if [ "$target" = "$DEFAULT_BRANCH" ]; then
+      echo -e "${C_RED}✖ Branch default tidak boleh dihapus!${C_RESET}"
+      sleep 2
+      return
+    fi
+
+    echo ""
+    echo -e "${C_RED}⚠️  Yakin hapus branch '${target}' dari lokal & remote?${C_RESET}"
+    printf "${C_BOLD}Ketik 'YES' untuk konfirmasi ▸ ${C_RESET}"
+    local confirm
+    read -r confirm
+
+    if [ "$confirm" != "YES" ]; then
+      echo -e "${C_YELLOW}↩ Dibatalkan.${C_RESET}"
+      sleep 1
+      return
+    fi
+
+    # Pindah dulu ke default biar bisa hapus branch aktif
+    git checkout -q "$DEFAULT_BRANCH" 2>/dev/null || true
+
+    echo ""
+    echo -e "  ${C_CYAN}▸${C_RESET} hapus branch lokal..."
+    git branch -D "$target" 2>/dev/null \
+      && echo -e "  ${C_GREEN}✅ lokal terhapus${C_RESET}" \
+      || echo -e "  ${C_DIM}ℹ️  branch lokal tidak ada / sudah terhapus${C_RESET}"
+
+    echo -e "  ${C_CYAN}▸${C_RESET} hapus branch remote..."
+    local del_log
+    del_log=$(mktemp)
+    if git push origin --delete "$target" >"$del_log" 2>&1; then
+      echo -e "  ${C_GREEN}✅ remote terhapus${C_RESET}"
+      echo ""
+      echo -e "  ${C_GREEN}🎉 Branch '${target}' berhasil dihapus!${C_RESET}"
+    else
+      echo -e "  ${C_RED}❌ Gagal hapus remote${C_RESET}"
+      echo -e "  ${C_DIM}── error log ──${C_RESET}"
+      sed 's/^/    /' "$del_log" | tail -10
+    fi
+    rm -f "$del_log"
+  else
+    echo -e "${C_RED}✖ Pilihan tidak valid${C_RESET}"
+    sleep 1
+    return
+  fi
+
+  echo ""
+  echo -e "${C_DIM}Tekan ENTER untuk kembali ke menu...${C_RESET}"
+  read -r
+}
+
+# ===== Menu pemilih branch (sub-menu dari opsi 1) =====
 show_menu() {
   banner
 
@@ -387,12 +578,11 @@ run_upload() {
   fi
 }
 
-# ===== Loop menu =====
+# ===== Loop menu utama =====
 main_loop() {
   while true; do
     SELECTED_BRANCHES=()
-    show_menu
-    run_upload
+    show_main_menu
 
     echo ""
     echo -e "${C_DIM}Tekan ${C_BOLD}ENTER${C_RESET}${C_DIM} untuk kembali ke menu, ${C_BOLD}q${C_RESET}${C_DIM} untuk keluar.${C_RESET}"
