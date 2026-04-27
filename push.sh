@@ -334,9 +334,12 @@ action_delete_branch() {
     i=$((i + 1))
   done
   echo ""
+  echo -e "  ${C_DIM}Multi-hapus: pisahkan nomor dengan koma/spasi${C_RESET}"
+  echo -e "  ${C_DIM}Contoh: ${C_BOLD}1,3${C_RESET}${C_DIM}  atau  ${C_BOLD}1 2 3${C_RESET}${C_DIM}  atau  ${C_BOLD}all${C_RESET}${C_DIM} (semua)${C_RESET}"
+  echo ""
   echo -e "  ${C_RED}0${C_RESET} ${C_DIM}kembali ke menu${C_RESET}"
   echo ""
-  printf "${C_BOLD}Pilih branch [0/1-${total}] ▸ ${C_RESET}"
+  printf "${C_BOLD}Pilih branch ▸ ${C_RESET}"
 
   local pick
   read -r pick
@@ -348,60 +351,116 @@ action_delete_branch() {
     return
   fi
 
-  if echo "$pick" | grep -qE '^[0-9]+$' && [ "$pick" -ge 1 ] && [ "$pick" -le "$total" ]; then
-    local target="${branches[$((pick - 1))]}"
+  # ===== Parse pilihan (bisa "1,3" / "1 3" / "all" / "1") =====
+  local targets=()
+  local invalid=()
 
-    # Proteksi double untuk default
-    if [ "$target" = "$DEFAULT_BRANCH" ]; then
-      echo -e "${C_RED}✖ Branch default tidak boleh dihapus!${C_RESET}"
+  if [ "$pick" = "all" ] || [ "$pick" = "ALL" ] || [ "$pick" = "a" ] || [ "$pick" = "A" ]; then
+    targets=("${branches[@]}")
+  else
+    # Ganti koma jadi spasi, lalu split
+    local normalized
+    normalized=$(echo "$pick" | tr ',;' '  ')
+    local seen=" "
+    for n in $normalized; do
+      if echo "$n" | grep -qE '^[0-9]+$' && [ "$n" -ge 1 ] && [ "$n" -le "$total" ]; then
+        local b="${branches[$((n - 1))]}"
+        # Hindari duplikat
+        case "$seen" in
+          *" $n "*) ;;
+          *) targets+=("$b"); seen="$seen$n " ;;
+        esac
+      else
+        invalid+=("$n")
+      fi
+    done
+  fi
+
+  # Notif kalau ada nomor invalid
+  if [ ${#invalid[@]} -gt 0 ]; then
+    echo ""
+    echo -e "${C_RED}✖ Nomor tidak valid: ${invalid[*]}${C_RESET} ${C_DIM}(range valid: 1-${total})${C_RESET}"
+    if [ ${#targets[@]} -eq 0 ]; then
+      echo -e "${C_YELLOW}↩ Tidak ada branch dipilih, kembali ke menu.${C_RESET}"
       sleep 2
       return
-    fi
-
-    echo ""
-    echo -e "${C_RED}⚠️  Yakin hapus branch '${target}' dari lokal & remote?${C_RESET}"
-    echo -e "  ${C_GREEN}YES${C_RESET}  ${C_DIM}lanjut hapus${C_RESET}"
-    echo -e "  ${C_RED}0${C_RESET}    ${C_DIM}batal & kembali ke menu${C_RESET}"
-    printf "${C_BOLD}Konfirmasi ▸ ${C_RESET}"
-    local confirm
-    read -r confirm
-
-    if [ "$confirm" != "YES" ]; then
-      echo -e "${C_YELLOW}↩ Kembali ke menu.${C_RESET}"
-      sleep 1
-      return
-    fi
-
-    # Pindah dulu ke default biar bisa hapus branch aktif
-    git checkout -q "$DEFAULT_BRANCH" 2>/dev/null || true
-
-    echo ""
-    echo -e "  ${C_CYAN}▸${C_RESET} hapus branch lokal..."
-    git branch -D "$target" 2>/dev/null \
-      && echo -e "  ${C_GREEN}✅ lokal terhapus${C_RESET}" \
-      || echo -e "  ${C_DIM}ℹ️  branch lokal tidak ada / sudah terhapus${C_RESET}"
-
-    echo -e "  ${C_CYAN}▸${C_RESET} hapus branch remote..."
-    local del_log
-    del_log=$(mktemp)
-    if git push origin --delete "$target" >"$del_log" 2>&1; then
-      echo -e "  ${C_GREEN}✅ remote terhapus${C_RESET}"
-      echo ""
-      echo -e "  ${C_GREEN}🎉 Branch '${target}' berhasil dihapus!${C_RESET}"
     else
-      echo -e "  ${C_RED}❌ Gagal hapus remote${C_RESET}"
-      echo -e "  ${C_DIM}── error log ──${C_RESET}"
-      sed 's/^/    /' "$del_log" | tail -10
+      echo -e "${C_DIM}   Lanjut hapus yang valid saja...${C_RESET}"
+      sleep 1
     fi
-    rm -f "$del_log"
-  else
-    echo -e "${C_RED}✖ Pilihan tidak valid${C_RESET}"
+  fi
+
+  if [ ${#targets[@]} -eq 0 ]; then
+    echo -e "${C_RED}✖ Tidak ada pilihan valid.${C_RESET}"
+    sleep 2
+    return
+  fi
+
+  # ===== Konfirmasi =====
+  echo ""
+  echo -e "${C_RED}⚠️  Yakin hapus ${#targets[@]} branch berikut dari lokal & remote?${C_RESET}"
+  for t in "${targets[@]}"; do
+    echo -e "    ${C_YELLOW}•${C_RESET} ${C_BOLD}${t}${C_RESET}"
+  done
+  echo ""
+  echo -e "  ${C_GREEN}1${C_RESET} ${C_DIM}lanjut hapus${C_RESET}"
+  echo -e "  ${C_RED}0${C_RESET} ${C_DIM}batal & kembali ke menu${C_RESET}"
+  printf "${C_BOLD}Konfirmasi ▸ ${C_RESET}"
+  local confirm
+  read -r confirm
+
+  if [ "$confirm" != "1" ]; then
+    echo -e "${C_YELLOW}↩ Dibatalkan, kembali ke menu.${C_RESET}"
     sleep 1
     return
   fi
 
+  # Pindah dulu ke default biar aman
+  git checkout -q "$DEFAULT_BRANCH" 2>/dev/null || true
+
+  local ok=0 fail=0
+  for target in "${targets[@]}"; do
+    # Proteksi terakhir untuk default
+    if [ "$target" = "$DEFAULT_BRANCH" ]; then
+      echo ""
+      echo -e "  ${C_RED}✖ '${target}' adalah branch default — dilewati.${C_RESET}"
+      fail=$((fail + 1))
+      continue
+    fi
+
+    echo ""
+    echo -e "${C_BOLD}🗑️  ${target}${C_RESET}"
+    echo -e "  ${C_CYAN}▸${C_RESET} hapus lokal..."
+    if git branch -D "$target" 2>/dev/null; then
+      echo -e "  ${C_GREEN}✅ lokal terhapus${C_RESET}"
+    else
+      echo -e "  ${C_DIM}ℹ️  branch lokal tidak ada / sudah terhapus${C_RESET}"
+    fi
+
+    echo -e "  ${C_CYAN}▸${C_RESET} hapus remote..."
+    local del_log
+    del_log=$(mktemp)
+    if git push origin --delete "$target" >"$del_log" 2>&1; then
+      echo -e "  ${C_GREEN}✅ remote terhapus${C_RESET}"
+      ok=$((ok + 1))
+    else
+      echo -e "  ${C_RED}❌ Gagal hapus remote${C_RESET}"
+      echo -e "  ${C_DIM}── error log ──${C_RESET}"
+      sed 's/^/    /' "$del_log" | tail -5
+      fail=$((fail + 1))
+    fi
+    rm -f "$del_log"
+  done
+
+  # ===== Ringkasan =====
   echo ""
-  echo -e "${C_DIM}Tekan ENTER untuk kembali ke menu...${C_RESET}"
+  echo -e "${C_BOLD}─── Ringkasan ───${C_RESET}"
+  echo -e "  ${C_GREEN}✅ Sukses : ${ok}${C_RESET}"
+  [ "$fail" -gt 0 ] && echo -e "  ${C_RED}❌ Gagal  : ${fail}${C_RESET}"
+
+  echo ""
+  echo -e "  ${C_GREEN}1${C_RESET} ${C_DIM}kembali ke menu${C_RESET}  ${C_DIM}(atau ENTER)${C_RESET}"
+  printf "${C_BOLD}▸ ${C_RESET}"
   read -r
 }
 
@@ -588,9 +647,11 @@ main_loop() {
     show_main_menu
 
     echo ""
-    echo -e "${C_DIM}Tekan ${C_BOLD}ENTER${C_RESET}${C_DIM} untuk kembali ke menu, ${C_BOLD}q${C_RESET}${C_DIM} untuk keluar.${C_RESET}"
+    echo -e "  ${C_GREEN}1${C_RESET} ${C_DIM}kembali ke menu${C_RESET}"
+    echo -e "  ${C_RED}0${C_RESET} ${C_DIM}atau q untuk keluar${C_RESET}"
     printf "${C_BOLD}▸ ${C_RESET}"
     read -r next
+    next="${next:-1}"
     case "$next" in
       q|Q|exit|0)
         goodbye_prompt
