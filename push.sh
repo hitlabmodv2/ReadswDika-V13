@@ -32,6 +32,10 @@ USER="hitlabmodv2"
 REPO="ReadswDika-V13"
 DEFAULT_BRANCH="main"
 
+# Branch yang disembunyikan dari menu (system / internal).
+# Pisahkan dengan spasi. Contoh: "replit-agent gh-pages backup"
+IGNORE_BRANCHES="replit-agent HEAD"
+
 set -o pipefail
 # Catatan: sengaja TIDAK pakai `set -e` biar error per-branch nggak
 # langsung kill seluruh script — biar bisa kembali ke menu.
@@ -170,15 +174,29 @@ prepare_stage() {
   git add -f .agents 2>/dev/null || true
 }
 
-# ===== Ambil daftar branch dari remote =====
+# ===== Ambil daftar branch (lokal + remote origin) =====
 fetch_branches() {
   git fetch origin --quiet 2>/dev/null || true
-  # Daftar branch unik (lokal + remote), tanpa HEAD
+
+  # Bangun pola ignore (regex) dari IGNORE_BRANCHES
+  local ignore_pattern=""
+  for b in $IGNORE_BRANCHES; do
+    [ -z "$ignore_pattern" ] && ignore_pattern="^${b}$" || ignore_pattern="${ignore_pattern}|^${b}$"
+  done
+  [ -z "$ignore_pattern" ] && ignore_pattern="^$"
+
   {
-    git for-each-ref --format='%(refname:short)' refs/heads/ 2>/dev/null
-    git for-each-ref --format='%(refname:short)' refs/remotes/origin/ 2>/dev/null \
-      | sed 's|^origin/||' | grep -v '^HEAD$'
-  } | sort -u | grep -v '^$'
+    # Branch lokal — full refname biar nggak ke-resolve symbolic ref
+    git for-each-ref --format='%(refname)' refs/heads/ 2>/dev/null \
+      | sed 's|^refs/heads/||'
+
+    # Branch remote di origin — pakai ls-remote biar bersih, tanpa HEAD
+    git ls-remote --heads origin 2>/dev/null \
+      | awk '{print $2}' | sed 's|^refs/heads/||'
+  } \
+    | grep -v '^$' \
+    | grep -Ev "$ignore_pattern" \
+    | sort -u
 }
 
 # ===== Header banner =====
