@@ -45,6 +45,7 @@ import gemini from '../helper/gemini.js';
 import { updateUserName, getUserName } from '../db/userDb.js';
 import { loadUserMemory, detectAndUpdateMemory, clearUserMemory, memoryToReadable } from '../helper/userMemory.js';
 import { searchAndGetImage, searchAndGetImages, extractImagesFromText } from '../helper/imageSearch.js';
+import { extractVoiceNotesFromText, extractSongsFromText, extractVideosFromText, hasMediaDownloadMarker } from '../helper/aiTools.js';
 import { getHistory, addToHistory, clearHistory, clearAllHistory, countHistory, getSessionKey, buildHistoryMeta, wrapCurrentUserMessage } from '../db/aiHistory.js';
 import { sendAIReply } from '../helper/aiReact.js';
 import { buildSmartAlbumCaptionPrompt, buildSmartImageHistoryPrompt, buildSmartImageWaitPrompt, buildWilyAICommandPrompt, buildWilyFallbackUserPrompt, buildWilyMediaUserPrompt, buildWilyVisionContextPrompt } from '../helper/aiPrompt.js';
@@ -688,6 +689,101 @@ async function ensureYtdlp(hisoka, m) {
     return ytdlpBin;
 }
 
+/**
+ * Unified pipeline buat respons AI:
+ * 1. Extract semua marker media ([GAMBAR:], [VN:], [LAGU:], [VIDEO:])
+ * 2. Kirim media-media tersebut ke chat
+ * 3. Kirim sisa teks (cleanText) lewat sendAIReply
+ *
+ * @returns {Promise<{cleanText: string, sentText: string|null, counts: object}>}
+ */
+async function processAIMediaAndSend(hisoka, m, response) {
+    let working = String(response || '').trim();
+    if (!working) return { cleanText: '', sentText: null, counts: { images: 0, voiceNotes: 0, songs: 0, videos: 0 } };
+
+    // ── 1. GAMBAR (cepat, tanpa yt-dlp) ──
+    const imgRes = await extractImagesFromText(working);
+    working = imgRes.cleanText;
+    const images = imgRes.images || [];
+
+    // ── 2. VN / TTS (cepat, tanpa yt-dlp) ──
+    const vnRes = await extractVoiceNotesFromText(working);
+    working = vnRes.cleanText;
+    const voiceNotes = vnRes.voiceNotes || [];
+
+    // ── 3. LAGU + VIDEO (butuh yt-dlp, ensure dulu sekali) ──
+    let songs = [];
+    let videos = [];
+    if (hasMediaDownloadMarker(working)) {
+        try {
+            const ytdlpBin = await ensureYtdlp(hisoka, m);
+            const songRes = await extractSongsFromText(working, { ytdlpBin });
+            working = songRes.cleanText;
+            songs = songRes.songs || [];
+            const videoRes = await extractVideosFromText(working, { ytdlpBin });
+            working = videoRes.cleanText;
+            videos = videoRes.videos || [];
+        } catch (e) {
+            wilyError(`[AIMedia] ❌ ensureYtdlp gagal: ${e.message}`);
+        }
+    }
+
+    // ── 4. KIRIM SEMUA MEDIA ──
+    for (const img of images) {
+        try {
+            await hisoka.sendMessage(m.from, { image: img.buffer, caption: '🖼️' }, { quoted: m });
+        } catch (e) { wilyError(`[AIMedia] kirim gambar gagal: ${e.message}`); }
+    }
+    for (const vn of voiceNotes) {
+        try {
+            await hisoka.sendMessage(m.from, {
+                audio: vn.buffer,
+                mimetype: 'audio/mp4',
+                ptt: true,
+            }, { quoted: m });
+        } catch (e) { wilyError(`[AIMedia] kirim VN gagal: ${e.message}`); }
+    }
+    for (const song of songs) {
+        try {
+            const safeName = (song.title || 'lagu').replace(/[^\w\s-]/g, '').slice(0, 80) || 'lagu';
+            await hisoka.sendMessage(m.from, {
+                audio: song.buffer,
+                mimetype: 'audio/mpeg',
+                fileName: `${safeName}.mp3`,
+                ptt: false,
+            }, { quoted: m });
+        } catch (e) { wilyError(`[AIMedia] kirim lagu gagal: ${e.message}`); }
+    }
+    for (const video of videos) {
+        try {
+            const cap = `🎬 *${video.title}*\n👤 ${video.channel}`;
+            await hisoka.sendMessage(m.from, {
+                video: video.buffer,
+                caption: cap,
+                mimetype: 'video/mp4',
+            }, { quoted: m });
+        } catch (e) { wilyError(`[AIMedia] kirim video gagal: ${e.message}`); }
+    }
+
+    // ── 5. KIRIM TEKS SISA ──
+    const finalText = working.replace(/\n{3,}/g, '\n\n').trim();
+    let sentText = null;
+    if (finalText) {
+        sentText = await sendAIReply(hisoka, m, finalText);
+    }
+
+    const totalMedia = images.length + voiceNotes.length + songs.length + videos.length;
+    if (totalMedia > 0) {
+        wilyLog(`\x1b[36m[AIMedia]\x1b[39m sent → ${images.length} img + ${voiceNotes.length} vn + ${songs.length} lagu + ${videos.length} video`);
+    }
+
+    return {
+        cleanText: finalText,
+        sentText,
+        counts: { images: images.length, voiceNotes: voiceNotes.length, songs: songs.length, videos: videos.length },
+    };
+}
+
 function getSenderNumber(m) {
     if (m.key?.participant) return m.key.participant.split('@')[0];
     if (m.key?.remoteJid) return m.key.remoteJid.split('@')[0];
@@ -1229,11 +1325,7 @@ export default async function ({ message, type: messagesType }, hisoka) {
 
                                                 if (response && response.trim()) {
                                                         setAICooldown(m.sender);
-                                                        const { cleanText: autoClean, images: autoImgs } = await extractImagesFromText(response.trim());
-                                                        for (const img of autoImgs) {
-                                                                await hisoka.sendMessage(m.from, { image: img.buffer, caption: `🖼️` }, { quoted: m });
-                                                        }
-                                                        if (autoClean) await sendAIReply(hisoka, m, autoClean);
+                                                        await processAIMediaAndSend(hisoka, m, response.trim());
                                                         console.log(`\x1b[36m[AutoGemini]\x1b[39m Reply to ${userName} (${m.pushName}) in "${m.isGroup ? hisoka.getName(m.from) : 'DM'}" | Trigger: ${isBotMentioned ? 'mention' : 'reply'} | Media: ${hasMedia ? mediaLabel : 'none'}`);
                                                 }
                                         }
@@ -1539,11 +1631,8 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                                                 if (hasMedia) {
                                                                         autoFinalResponse = autoFinalResponse.replace(/\[GAMBAR:[^\]]{1,200}\]/gi, '').replace(/\n{3,}/g, '\n\n').trim();
                                                                 }
-                                                                const { cleanText: wilyCleanAuto, images: wilyImgsAuto } = await extractImagesFromText(autoFinalResponse);
-                                                                for (const img of wilyImgsAuto) {
-                                                                        await hisoka.sendMessage(m.from, { image: img.buffer, caption: `🖼️` }, { quoted: m });
-                                                                }
-                                                                const cleanResp = wilyCleanAuto ? await sendAIReply(hisoka, m, wilyCleanAuto) : null;
+                                                                const mediaResult = await processAIMediaAndSend(hisoka, m, autoFinalResponse);
+                                                                const cleanResp = mediaResult.sentText;
                                                                 addToHistory(sessKey, userMessage, cleanResp || response.trim(), buildHistoryMeta(m, { mediaLabel: hasMedia ? mediaLabel : null }));
                                                                 const triggerType = isWilyMentioned ? 'Mention' : isReplyToBotMsg ? 'Reply' : 'DM';
                                                                 wilyLog(`\x1b[36m[WilyAutoReply]\x1b[39m ${userName} | ${m.isGroup ? 'Grup' : 'Private'} | Trigger: ${triggerType} | Media: ${hasMedia ? mediaLabel : 'tidak ada'}`);
@@ -1687,11 +1776,8 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                                         }
 
                                                         if (pvResponse && pvResponse.trim()) {
-                                                                const { cleanText: pvCleanText, images: pvImgs } = await extractImagesFromText(pvResponse.trim());
-                                                                for (const img of pvImgs) {
-                                                                        await hisoka.sendMessage(m.from, { image: img.buffer, caption: `🖼️` }, { quoted: m });
-                                                                }
-                                                                const pvClean = pvCleanText ? await sendAIReply(hisoka, m, pvCleanText) : null;
+                                                                const pvMediaResult = await processAIMediaAndSend(hisoka, m, pvResponse.trim());
+                                                                const pvClean = pvMediaResult.sentText;
                                                                 addToHistory(pvSessKey, pvUserMsg, pvClean || pvResponse.trim(), buildHistoryMeta(m, { mediaLabel: pvHasMedia ? pvMediaLabel : null }));
                                                                 console.log(`\x1b[36m[WilyPrivate]\x1b[39m ${pvUserName} | DM | Media: ${pvHasMedia ? pvMediaLabel : 'tidak ada'}`);
                                                         }
@@ -5687,12 +5773,16 @@ text += `╰══════════════════════�
                                                         }
                                                         finalResponse = stripped;
                                                 }
-                                                const { cleanText: wilyCleanText, images: wilyImgs } = await extractImagesFromText(finalResponse);
-                                                for (const img of wilyImgs) {
-                                                        await hisoka.sendMessage(m.from, { image: img.buffer, caption: `🖼️` }, { quoted: m });
-                                                }
-                                                const wilyClean = wilyCleanText ? await sendAIReply(hisoka, m, wilyCleanText) : null;
-                                                console.log(`\x1b[36m[WilyAI]\x1b[0m → balas ${finalResponse.length} karakter${wilyImgs.length > 0 ? ` + ${wilyImgs.length} gambar` : ''} ke ${m.sender}`);
+                                                const wilyMediaResult = await processAIMediaAndSend(hisoka, m, finalResponse);
+                                                const wilyClean = wilyMediaResult.sentText;
+                                                const wc = wilyMediaResult.counts;
+                                                const mediaSummary = [
+                                                        wc.images ? `${wc.images} gambar` : null,
+                                                        wc.voiceNotes ? `${wc.voiceNotes} VN` : null,
+                                                        wc.songs ? `${wc.songs} lagu` : null,
+                                                        wc.videos ? `${wc.videos} video` : null,
+                                                ].filter(Boolean).join(' + ');
+                                                console.log(`\x1b[36m[WilyAI]\x1b[0m → balas ${finalResponse.length} karakter${mediaSummary ? ` + ${mediaSummary}` : ''} ke ${m.sender}`);
                                                 if (useHistory) {
                                                         addToHistory(sessKey, userQuestion, wilyClean || response.trim(), buildHistoryMeta(m));
                                                 }
