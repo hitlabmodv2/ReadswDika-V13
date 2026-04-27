@@ -32,7 +32,9 @@ USER="hitlabmodv2"
 REPO="ReadswDika-V13"
 DEFAULT_BRANCH="main"
 
-set -e
+set -o pipefail
+# Catatan: sengaja TIDAK pakai `set -e` biar error per-branch nggak
+# langsung kill seluruh script — biar bisa kembali ke menu.
 
 # ===== Warna (opsional, aman di Termux) =====
 if [ -t 1 ]; then
@@ -226,8 +228,7 @@ show_menu() {
 
   case "$choice" in
     0|q|Q|exit)
-      echo -e "${C_DIM}Bye 👋${C_RESET}"
-      exit 0
+      goodbye_prompt
       ;;
     a|A)
       SELECTED_BRANCHES=("${branches[@]}")
@@ -235,8 +236,8 @@ show_menu() {
     d|D|"")
       SELECTED_BRANCHES=("$DEFAULT_BRANCH")
       ;;
-    *[!0-9]*|"")
-      echo -e "${C_RED}✖ Pilihan tidak valid.${C_RESET}"
+    *[!0-9]*)
+      echo -e "${C_RED}✖ Pilihan tidak valid: '${choice}'${C_RESET} ${C_DIM}(hanya angka, A, D, atau 0)${C_RESET}"
       sleep 1
       show_menu
       return
@@ -245,11 +246,32 @@ show_menu() {
       if [ "$choice" -ge 1 ] && [ "$choice" -le "$total" ]; then
         SELECTED_BRANCHES=("${branches[$((choice - 1))]}")
       else
-        echo -e "${C_RED}✖ Nomor di luar range.${C_RESET}"
+        echo -e "${C_RED}✖ Nomor ${choice} di luar range${C_RESET} ${C_DIM}(1-${total})${C_RESET}"
         sleep 1
         show_menu
         return
       fi
+      ;;
+  esac
+}
+
+# ===== Goodbye prompt (bisa balik cepat dengan ketik 1) =====
+goodbye_prompt() {
+  echo ""
+  echo -e "${C_DIM}─────────────────────────────────────${C_RESET}"
+  echo -e "${C_BOLD}ℹ️  Keluar.${C_RESET}"
+  echo -e "  ${C_GREEN}1${C_RESET} ${C_DIM}masuk lagi${C_RESET}"
+  echo -e "  ${C_RED}0${C_RESET} ${C_DIM}atau ENTER untuk benar-benar keluar${C_RESET}"
+  printf "${C_BOLD}▸ ${C_RESET}"
+  local back
+  read -r back
+  case "$back" in
+    1|y|Y|yes|menu|m|M)
+      main_loop
+      ;;
+    *)
+      echo -e "${C_DIM}Bye 👋${C_RESET}"
+      exit 0
       ;;
   esac
 }
@@ -295,13 +317,19 @@ push_to_branch() {
   echo -e "  ${C_GREEN}✅${C_RESET} ${MSG}"
 
   echo -e "  ${C_CYAN}▸${C_RESET} push..."
-  if ! git push -u origin "$branch" >/dev/null 2>&1; then
+  local push_log
+  push_log=$(mktemp)
+  if ! git push -u origin "$branch" >"$push_log" 2>&1; then
     echo -e "  ${C_YELLOW}⚠️  Push normal gagal, mencoba force push...${C_RESET}"
-    if ! git push --force -u origin "$branch" >/dev/null 2>&1; then
+    if ! git push --force -u origin "$branch" >"$push_log" 2>&1; then
       echo -e "  ${C_RED}❌ Gagal push ke ${branch}${C_RESET}"
+      echo -e "  ${C_DIM}── error log ──${C_RESET}"
+      sed 's/^/    /' "$push_log" | tail -10
+      rm -f "$push_log"
       return 1
     fi
   fi
+  rm -f "$push_log"
 
   echo ""
   echo -e "  ${C_GREEN}🎉 Sukses!${C_RESET} ${C_BOLD}${branch}${C_RESET} ${C_DIM}(upload)${C_RESET}"
@@ -354,11 +382,18 @@ main_loop() {
     read -r next
     case "$next" in
       q|Q|exit|0)
-        echo -e "${C_DIM}Bye 👋${C_RESET}"
-        exit 0
+        goodbye_prompt
         ;;
     esac
   done
 }
+
+# ===== Trap Ctrl+C → tawarkan masuk lagi =====
+on_interrupt() {
+  echo ""
+  echo -e "${C_YELLOW}⚠️  Dibatalkan (Ctrl+C).${C_RESET}"
+  goodbye_prompt
+}
+trap on_interrupt INT
 
 main_loop
