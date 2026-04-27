@@ -1412,7 +1412,8 @@
     "id": "6285175463174@s.whatsapp.net",
     "name": "sunshine jpeg",
     "lid": "156182794784889@lid",
-    "jid": "6285175463174@s.whatsapp.net"
+    "jid": "6285175463174@s.whatsapp.net",
+    "notify": "sunshine.jpeg"
   },
   "6285704944237@s.whatsapp.net": {
     "isContact": true,
@@ -2343,7 +2344,8 @@
     "id": "6281368074650@s.whatsapp.net",
     "name": "▶︎ •၊၊||၊|။||||။‌‌‌‌‌၊|•↻",
     "lid": "63462487134320@lid",
-    "jid": "6281368074650@s.whatsapp.net"
+    "jid": "6281368074650@s.whatsapp.net",
+    "notify": "⚔️"
   },
   "6283869623386@s.whatsapp.net": {
     "isContact": true,
@@ -3386,7 +3388,8 @@
     "id": "6285730994384@s.whatsapp.net",
     "name": "! Name",
     "lid": "32560214179906@lid",
-    "jid": "6285730994384@s.whatsapp.net"
+    "jid": "6285730994384@s.whatsapp.net",
+    "notify": "Name"
   },
   "6289606758271@s.whatsapp.net": {
     "isContact": true,
@@ -8413,7 +8416,8 @@
     "id": "6282139672290@s.whatsapp.net",
     "name": "Ananda",
     "lid": "164746439479432@lid",
-    "jid": "6282139672290@s.whatsapp.net"
+    "jid": "6282139672290@s.whatsapp.net",
+    "notify": "Nixel"
   },
   "60126002792@s.whatsapp.net": {
     "isContact": true,
@@ -13148,7 +13152,8 @@
     "id": "62881011217173@s.whatsapp.net",
     "name": "! Angkasaa",
     "lid": "32530686279918@lid",
-    "jid": "62881011217173@s.whatsapp.net"
+    "jid": "62881011217173@s.whatsapp.net",
+    "notify": "Angkasaa"
   },
   "6289649971872@s.whatsapp.net": {
     "isContact": true,
@@ -17871,7 +17876,8 @@
     "id": "6285188150676@s.whatsapp.net",
     "name": "γυς ρου [ NOKOS 2 ]",
     "lid": "3638558740716@lid",
-    "jid": "6285188150676@s.whatsapp.net"
+    "jid": "6285188150676@s.whatsapp.net",
+    "notify": "pou"
   },
   "6287765079706@s.whatsapp.net": {
     "isContact": true,
@@ -22283,7 +22289,8 @@
     "id": "6282161429908@s.whatsapp.net",
     "name": "√𝘚𝘩𝘦𝘯𝘢𝘢",
     "lid": "131061380042825@lid",
-    "jid": "6282161429908@s.whatsapp.net"
+    "jid": "6282161429908@s.whatsapp.net",
+    "notify": "RIYAN"
   },
   "6281268795994@s.whatsapp.net": {
     "isContact": true,
@@ -31595,5 +31602,34 @@
     "id": "190370382131391@lid",
     "lid": "190370382131391@lid",
     "imgUrl": "changed"
+  },
+  "156182794784889@lid": {
+    "id": "156182794784889@lid",
+    "lid": "156182794784889@lid",
+    "notify": "sunshine.jpeg"
+  },
+  "46888711655466@lid": {
+    "id": "46888711655466@lid",
+    "lid": "46888711655466@lid",
+    "notify": "— Fiora Sylvie"
+  },
+  "164746439479432@lid": {
+    "id": "164746439479432@lid",
+    "lid": "164746439479432@lid",
+    "notify": "Nixel"
+  },
+  "212611350872@s.whatsapp.net": {
+    "id": "212611350872@s.whatsapp.net",
+    "notify": "— Fiora Sylvie"
+  },
+  "239328697536578@lid": {
+    "id": "239328697536578@lid",
+    "lid": "239328697536578@lid",
+    "notify": "Anda Siapa?",
+    "verifiedName": "Anda Siapa?"
+  },
+  "6285860196593@s.whatsapp.net": {
+    "id": "6285860196593@s.whatsapp.net",
+    "notify": "Who??"
   }
 }
