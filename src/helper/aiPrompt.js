@@ -430,7 +430,18 @@ export function buildWilyAICommandPrompt({
     userMemory = null,
 }) {
     const historyNote = hasHistory
-        ? `\n⚡ KONTEKS AKTIF: Kamu sedang MELANJUTKAN percakapan dengan ${userName}. History percakapan tersedia di atas. WAJIB gunakan informasi dari history — jika user menyebut "itu", "tadi", "yang kamu bilang", "lanjutkan", "sama gak", "bedanya apa", "mirip gak" dll → SELALU rujuk ke history. JANGAN mulai ulang seolah percakapan baru.`
+        ? `\n⚡ KONTEKS AKTIF: Kamu sedang MELANJUTKAN percakapan dengan ${userName}. History percakapan tersedia di atas. WAJIB gunakan informasi dari history — jika user menyebut "itu", "tadi", "yang kamu bilang", "lanjutkan", "sama gak", "bedanya apa", "mirip gak" dll → SELALU rujuk ke history. JANGAN mulai ulang seolah percakapan baru.
+
+📑 FORMAT META HISTORY (penting dibaca):
+Setiap pesan di history diawali baris meta dalam kurung siku [ ... ] berisi:
+  • ⏰ <jam tanggal WIB>  → waktu pesan dikirim
+  • ↩️ BALAS PESAN BOT SEBELUMNYA: "<kutipan>"  → user lagi balas pesan bot YANG ITU spesifik
+  • 📎 KIRIM <jenis media>  → user kirim gambar/sticker/dll
+  • 👤 <nama user>  → identitas pengirim
+JANGAN ulang/echo baris meta ini di balasanmu. Pakai HANYA untuk pahami konteks:
+  - Hitung selisih waktu antar pesan → tau ini lanjutan langsung atau topik baru setelah jeda lama
+  - Kalau user balas pesan lama bot, sambungkan ke topik kutipan tsb, BUKAN topik terakhir
+  - Kalau jeda > 1 jam dan user nyapa lagi → boleh sapa balik singkat, tapi tetap inget konteks lama` 
         : '';
 
     let quotedNote = '';

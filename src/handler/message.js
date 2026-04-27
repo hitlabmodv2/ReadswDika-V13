@@ -45,7 +45,7 @@ import gemini from '../helper/gemini.js';
 import { updateUserName, getUserName } from '../db/userDb.js';
 import { loadUserMemory, detectAndUpdateMemory, clearUserMemory, memoryToReadable } from '../helper/userMemory.js';
 import { searchAndGetImage, searchAndGetImages, extractImagesFromText } from '../helper/imageSearch.js';
-import { getHistory, addToHistory, clearHistory, clearAllHistory, countHistory, getSessionKey } from '../db/aiHistory.js';
+import { getHistory, addToHistory, clearHistory, clearAllHistory, countHistory, getSessionKey, buildHistoryMeta } from '../db/aiHistory.js';
 import { sendAIReply } from '../helper/aiReact.js';
 import { buildSmartAlbumCaptionPrompt, buildSmartImageHistoryPrompt, buildSmartImageWaitPrompt, buildWilyAICommandPrompt, buildWilyFallbackUserPrompt, buildWilyMediaUserPrompt, buildWilyVisionContextPrompt } from '../helper/aiPrompt.js';
 
@@ -1447,7 +1447,7 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                                                         });
                                                                 }
                                                                 if (isAutoReplyOn && historyReply) {
-                                                                        addToHistory(getSessionKey(m), userMessage, historyReply);
+                                                                        addToHistory(getSessionKey(m), userMessage, historyReply, buildHistoryMeta(m, { mediaLabel: 'gambar' }));
                                                                 }
                                                         } catch (se) {
                                                                 await tolak(hisoka, m, `❌ Maaf gagal cariin gambar "${autoImgQuery}". Coba lagi ya!`);
@@ -1543,7 +1543,7 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                                                         await hisoka.sendMessage(m.from, { image: img.buffer, caption: `🖼️` }, { quoted: m });
                                                                 }
                                                                 const cleanResp = wilyCleanAuto ? await sendAIReply(hisoka, m, wilyCleanAuto) : null;
-                                                                addToHistory(sessKey, userMessage, cleanResp || response.trim());
+                                                                addToHistory(sessKey, userMessage, cleanResp || response.trim(), buildHistoryMeta(m, { mediaLabel: hasMedia ? mediaLabel : null }));
                                                                 const triggerType = isWilyMentioned ? 'Mention' : isReplyToBotMsg ? 'Reply' : 'DM';
                                                                 wilyLog(`\x1b[36m[WilyAutoReply]\x1b[39m ${userName} | ${m.isGroup ? 'Grup' : 'Private'} | Trigger: ${triggerType} | Media: ${hasMedia ? mediaLabel : 'tidak ada'}`);
                                                         }
@@ -1691,7 +1691,7 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                                                         await hisoka.sendMessage(m.from, { image: img.buffer, caption: `🖼️` }, { quoted: m });
                                                                 }
                                                                 const pvClean = pvCleanText ? await sendAIReply(hisoka, m, pvCleanText) : null;
-                                                                addToHistory(pvSessKey, pvUserMsg, pvClean || pvResponse.trim());
+                                                                addToHistory(pvSessKey, pvUserMsg, pvClean || pvResponse.trim(), buildHistoryMeta(m, { mediaLabel: pvHasMedia ? pvMediaLabel : null }));
                                                                 console.log(`\x1b[36m[WilyPrivate]\x1b[39m ${pvUserName} | DM | Media: ${pvHasMedia ? pvMediaLabel : 'tidak ada'}`);
                                                         }
                                                 } catch (pvErr) {
@@ -5557,7 +5557,7 @@ text += `╰══════════════════════�
                                                         await tolak(hisoka, m, `❌ Maaf ${userName}, gagal cariin gambar "${imgSearchQuery}".\n\nCoba kata kunci yang lebih spesifik ya!`);
                                                 }
                                                 if (useHistory && imgBotReply) {
-                                                        addToHistory(sessKey, userQuestion, imgBotReply);
+                                                        addToHistory(sessKey, userQuestion, imgBotReply, buildHistoryMeta(m, { mediaLabel: 'gambar' }));
                                                 }
                                                 logCommand(m, hisoka, 'wily');
                                                 break;
@@ -5691,7 +5691,7 @@ text += `╰══════════════════════�
                                                 const wilyClean = wilyCleanText ? await sendAIReply(hisoka, m, wilyCleanText) : null;
                                                 console.log(`\x1b[36m[WilyAI]\x1b[0m → balas ${finalResponse.length} karakter${wilyImgs.length > 0 ? ` + ${wilyImgs.length} gambar` : ''} ke ${m.sender}`);
                                                 if (useHistory) {
-                                                        addToHistory(sessKey, userQuestion, wilyClean || response.trim());
+                                                        addToHistory(sessKey, userQuestion, wilyClean || response.trim(), buildHistoryMeta(m));
                                                 }
                                         } else {
                                                 console.log(`\x1b[36m[WilyAI]\x1b[0m ⚠️ AI respons kosong untuk ${m.sender}`);

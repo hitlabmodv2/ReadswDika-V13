@@ -65,14 +65,74 @@ export function getHistory(sessionKey) {
         return session.messages || [];
 }
 
-export function addToHistory(sessionKey, userText, botText) {
+function fmtTime(ts) {
+        try {
+                return new Date(ts).toLocaleString('id-ID', {
+                        hour: '2-digit', minute: '2-digit',
+                        day: '2-digit', month: 'short',
+                        timeZone: 'Asia/Jakarta',
+                });
+        } catch {
+                return new Date(ts).toISOString();
+        }
+}
+
+function enrichUserText(userText, meta = {}) {
+        const ts = meta.timestamp || Date.now();
+        const timeStr = fmtTime(ts);
+        const tags = [`⏰ ${timeStr}`];
+
+        if (meta.quotedBotText) {
+                const q = String(meta.quotedBotText).replace(/\s+/g, ' ').trim();
+                const excerpt = q.length > 140 ? q.slice(0, 140) + '...' : q;
+                tags.push(`↩️ BALAS PESAN BOT SEBELUMNYA: "${excerpt}"`);
+        } else if (meta.isReplyToBot) {
+                tags.push('↩️ BALAS PESAN BOT SEBELUMNYA');
+        }
+
+        if (meta.mediaLabel) {
+                tags.push(`📎 KIRIM ${String(meta.mediaLabel).toUpperCase()}`);
+        }
+        if (meta.userName) {
+                tags.push(`👤 ${meta.userName}`);
+        }
+
+        const tagBlock = `[${tags.join(' | ')}]`;
+        return userText && userText.trim().length > 0
+                ? `${tagBlock}\n${userText}`
+                : tagBlock;
+}
+
+function enrichBotText(botText, meta = {}) {
+        const ts = meta.timestamp || Date.now();
+        return `[⏰ ${fmtTime(ts)}]\n${botText}`;
+}
+
+export function addToHistory(sessionKey, userText, botText, meta = {}) {
         const session = loadSession(sessionKey) || { messages: [], lastActivity: Date.now() };
+        const ts = Date.now();
+        const sharedMeta = { ...meta, timestamp: meta.timestamp || ts };
 
-        session.messages.push({ role: 'user', parts: [{ text: userText }] });
-        session.messages.push({ role: 'model', parts: [{ text: botText }] });
+        session.messages.push({ role: 'user', parts: [{ text: enrichUserText(userText, sharedMeta) }] });
+        session.messages.push({ role: 'model', parts: [{ text: enrichBotText(botText, { timestamp: ts }) }] });
 
-        session.lastActivity = Date.now();
+        session.lastActivity = ts;
         saveSession(sessionKey, session);
+}
+
+export function buildHistoryMeta(m, extra = {}) {
+        const meta = { timestamp: Date.now(), ...extra };
+        try {
+                if (m?.isQuoted && m?.quoted?.key?.fromMe) {
+                        meta.isReplyToBot = true;
+                        const q = m.quoted?.text || m.quoted?.caption || m.quoted?.body || '';
+                        if (q) meta.quotedBotText = q;
+                }
+                if (m?.pushName && !meta.userName) {
+                        meta.userName = m.pushName;
+                }
+        } catch {}
+        return meta;
 }
 
 export function clearHistory(sessionKey) {
