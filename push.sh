@@ -30,6 +30,8 @@
 
 USER="hitlabmodv2"
 REPO="ReadswDika-V13"
+# DEFAULT_BRANCH di-auto-detect realtime dari GitHub (lihat detect_default_branch).
+# Nilai di sini cuma fallback kalau koneksi ke GitHub bermasalah.
 DEFAULT_BRANCH="main"
 
 # Branch yang disembunyikan dari menu (system / internal).
@@ -72,11 +74,36 @@ REMOTE_URL="https://${USER}:${TOKEN}@github.com/${USER}/${REPO}.git"
 git config user.name "$USER"
 git config user.email "${USER}@users.noreply.github.com"
 
+# Kalau ada >1 remote yang punya branch dengan nama sama (mis. 'main' di
+# origin DAN di gitsafe-backup), git checkout jadi ambigu. Setting ini
+# bilang "selalu prefer origin" → fix "matched multiple remote tracking branches".
+git config checkout.defaultRemote origin
+
 if git remote get-url origin >/dev/null 2>&1; then
   git remote set-url origin "$REMOTE_URL"
 else
   git remote add origin "$REMOTE_URL"
 fi
+
+# ===== Auto-detect default branch dari GitHub (REAL-TIME) =====
+# GitHub bisa ganti default branch kapan aja. Daripada hardcode 'main',
+# tanyain langsung ke remote: HEAD-nya nunjuk ke branch mana sekarang?
+detect_default_branch() {
+  local detected
+  detected=$(git ls-remote --symref origin HEAD 2>/dev/null \
+             | awk '/^ref:/{print $2; exit}' \
+             | sed 's|^refs/heads/||')
+
+  if [ -n "$detected" ]; then
+    if [ "$detected" != "$DEFAULT_BRANCH" ]; then
+      echo -e "${C_DIM}🔄 Default branch di GitHub berubah: ${C_YELLOW}${DEFAULT_BRANCH}${C_RESET}${C_DIM} → ${C_GREEN}${detected}${C_RESET}" >&2
+    fi
+    DEFAULT_BRANCH="$detected"
+  else
+    echo -e "${C_DIM}⚠️  Gagal deteksi default branch dari GitHub, pakai fallback: ${DEFAULT_BRANCH}${C_RESET}" >&2
+  fi
+}
+detect_default_branch
 
 # ===== Auto-classify commit (Conventional Commits) =====
 classify_commit() {
@@ -664,17 +691,38 @@ push_to_branch() {
   echo ""
   echo -e "${C_BOLD}${USER}/${REPO} → ${C_GREEN}${branch}${C_RESET}${C_BOLD} (upload)${C_RESET}"
 
-  # Pastikan kita di branch tujuan
+  # Pastikan kita di branch tujuan.
+  # Pakai full ref `refs/remotes/origin/...` biar nggak bentrok sama remote
+  # lain yang punya branch dengan nama sama (mis. gitsafe-backup/main).
+  local checkout_log
+  checkout_log=$(mktemp)
   if git show-ref --verify --quiet "refs/heads/${branch}"; then
-    git checkout -q "$branch" 2>/dev/null || true
+    # Branch lokal sudah ada → pindah ke sana.
+    git checkout -q "$branch" >"$checkout_log" 2>&1 || true
+  elif git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
+    # Branch ada di origin tapi belum ada lokal → bikin lokal dari origin
+    # pakai full ref biar 100% unambiguous.
+    git checkout -q -B "$branch" "refs/remotes/origin/${branch}" >"$checkout_log" 2>&1 || true
   else
-    # Branch belum ada lokal — bikin dari remote kalau ada, kalau tidak bikin baru
-    if git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
-      git checkout -q -b "$branch" "origin/${branch}" 2>/dev/null || git checkout -q "$branch"
-    else
-      git checkout -q -b "$branch" 2>/dev/null || true
-    fi
+    # Branch belum ada di mana-mana → bikin baru dari HEAD sekarang.
+    git checkout -q -b "$branch" >"$checkout_log" 2>&1 || true
   fi
+
+  # Sanity check: pastikan benar-benar pindah. Kalau gagal, jangan lanjut push
+  # (biar error 'src refspec ... does not match any' nggak muncul).
+  local cur
+  cur=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+  if [ "$cur" != "$branch" ]; then
+    echo -e "  ${C_RED}❌ Gagal pindah ke branch '${branch}' — sekarang masih di '${cur}'${C_RESET}"
+    if [ -s "$checkout_log" ]; then
+      echo -e "  ${C_DIM}── error log ──${C_RESET}"
+      sed 's/^/    /' "$checkout_log" | tail -8
+    fi
+    echo -e "  ${C_DIM}   Tip: cek 'git remote -v' & 'git branch -a' kalau ada konflik nama.${C_RESET}"
+    rm -f "$checkout_log"
+    return 1
+  fi
+  rm -f "$checkout_log"
 
   # ===== STEP 1: Scan working tree DULU (sebelum staging) =====
   # Real-time snapshot — apa yang user lihat di disk sekarang.
