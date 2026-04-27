@@ -45,7 +45,7 @@ import gemini from '../helper/gemini.js';
 import { updateUserName, getUserName } from '../db/userDb.js';
 import { loadUserMemory, detectAndUpdateMemory, clearUserMemory, memoryToReadable } from '../helper/userMemory.js';
 import { searchAndGetImage, searchAndGetImages, extractImagesFromText } from '../helper/imageSearch.js';
-import { getHistory, addToHistory, clearHistory, clearAllHistory, countHistory, getSessionKey, buildHistoryMeta } from '../db/aiHistory.js';
+import { getHistory, addToHistory, clearHistory, clearAllHistory, countHistory, getSessionKey, buildHistoryMeta, wrapCurrentUserMessage } from '../db/aiHistory.js';
 import { sendAIReply } from '../helper/aiReact.js';
 import { buildSmartAlbumCaptionPrompt, buildSmartImageHistoryPrompt, buildSmartImageWaitPrompt, buildWilyAICommandPrompt, buildWilyFallbackUserPrompt, buildWilyMediaUserPrompt, buildWilyVisionContextPrompt } from '../helper/aiPrompt.js';
 
@@ -1477,13 +1477,14 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                                         history: histMsgs,
                                                         userMemory,
                                                 });
+                                                const currentMsgMeta = buildHistoryMeta(m, { mediaLabel: hasMedia ? mediaLabel : null });
                                                 let contents;
                                                 if (histMsgs.length > 0) {
                                                         contents = [
                                                                 { role: 'user', parts: [{ text: systemPrompt }] },
                                                                 { role: 'model', parts: [{ text: `Halo ${userName}! Aku Wily Bot, siap membantu 🤖` }] },
                                                                 ...histMsgs,
-                                                                { role: 'user', parts: [{ text: userMessage }] },
+                                                                { role: 'user', parts: [{ text: wrapCurrentUserMessage(userMessage, currentMsgMeta) }] },
                                                         ];
                                                 } else {
                                                         contents = [{ role: 'user', parts: [{ text: systemPrompt + '\n\n' + userMessage }] }];
@@ -1518,7 +1519,7 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                                                                 ...histMsgs,
                                                                                 { role: 'user', parts: [
                                                                                         { inlineData: { mimeType: finalMime, data: finalBuffer.toString('base64') } },
-                                                                                        { text: visionContextText },
+                                                                                        { text: wrapCurrentUserMessage(visionContextText, currentMsgMeta) },
                                                                                 ]},
                                                                         ];
                                                                         const models = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-pro-latest'];
@@ -5611,11 +5612,12 @@ text += `╰══════════════════════�
                                                 if (imageBuffer && imageBuffer.length > 0 && !isDocumentMode) {
                                                         contents = null; // handled below, history passed separately
                                                 } else {
+                                                        const cmdMsgMeta = buildHistoryMeta(m, { mediaLabel: hasMedia ? mediaLabel : null });
                                                         contents = [
                                                                 { role: 'user', parts: [{ text: systemPrompt }] },
                                                                 { role: 'model', parts: [{ text: `Halo ${userName}! Aku Wily Bot, siap membantu kamu 🤖` }] },
                                                                 ...historyMessages,
-                                                                { role: 'user', parts: [{ text: finalUserMsg }] },
+                                                                { role: 'user', parts: [{ text: wrapCurrentUserMessage(finalUserMsg, cmdMsgMeta) }] },
                                                         ];
                                                 }
                                                 wilyLog(`\x1b[36m[WilyAI]\x1b[39m Melanjutkan percakapan (${historyMessages.length / 2} pesan sebelumnya) untuk ${m.sender}`);
@@ -5641,6 +5643,7 @@ text += `╰══════════════════════�
                                                 }
                                                 // Untuk gambar/video, gabungkan history teks + pesan media terakhir
                                                 if (hasHistory) {
+                                                        const visionMsgMeta = buildHistoryMeta(m, { mediaLabel: hasMedia ? mediaLabel : 'gambar' });
                                                         const visionContents = [
                                                                 { role: 'user', parts: [{ text: systemPrompt }] },
                                                                 { role: 'model', parts: [{ text: `Halo ${userName}! Aku Wily Bot, siap membantu kamu 🤖` }] },
@@ -5649,7 +5652,7 @@ text += `╰══════════════════════�
                                                                         role: 'user',
                                                                         parts: [
                                                                                 { inlineData: { mimeType: finalMime, data: finalBuffer.toString('base64') } },
-                                                                                { text: finalUserMsg },
+                                                                                { text: wrapCurrentUserMessage(finalUserMsg, visionMsgMeta) },
                                                                         ],
                                                                 },
                                                         ];

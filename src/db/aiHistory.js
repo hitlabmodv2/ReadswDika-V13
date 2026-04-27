@@ -23,6 +23,12 @@ import path from 'path';
 
 const DATA_DIR = path.join(process.cwd(), 'data', 'ai_history');
 const EXPIRE_MS = 6 * 60 * 60 * 1000;
+// Maks jumlah PESAN (user+model) yang disimpan per session.
+// 20 = 10 giliran terakhir. Lebih dari ini → context kebanjiran &
+// model jadi ngarang / lupa fokus ke pesan terbaru.
+const MAX_HISTORY_MESSAGES = 20;
+// Maks panjang teks per pesan yang disimpan (biar context nggak meledak).
+const MAX_TEXT_PER_MESSAGE = 1500;
 
 if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -108,16 +114,48 @@ function enrichBotText(botText, meta = {}) {
         return `[⏰ ${fmtTime(ts)}]\n${botText}`;
 }
 
+function clip(text, max) {
+        if (!text) return text;
+        const s = String(text);
+        if (s.length <= max) return s;
+        return s.slice(0, max) + ` …(+${s.length - max} char dipotong)`;
+}
+
 export function addToHistory(sessionKey, userText, botText, meta = {}) {
         const session = loadSession(sessionKey) || { messages: [], lastActivity: Date.now() };
         const ts = Date.now();
         const sharedMeta = { ...meta, timestamp: meta.timestamp || ts };
 
-        session.messages.push({ role: 'user', parts: [{ text: enrichUserText(userText, sharedMeta) }] });
-        session.messages.push({ role: 'model', parts: [{ text: enrichBotText(botText, { timestamp: ts }) }] });
+        session.messages.push({ role: 'user',  parts: [{ text: enrichUserText(clip(userText, MAX_TEXT_PER_MESSAGE), sharedMeta) }] });
+        session.messages.push({ role: 'model', parts: [{ text: enrichBotText(clip(botText,  MAX_TEXT_PER_MESSAGE), { timestamp: ts }) }] });
+
+        // Trim biar nggak melebihi MAX_HISTORY_MESSAGES — buang pasangan paling lama.
+        // Selalu buang berpasangan (user+model) supaya tidak ganjil & tidak memutus konteks.
+        while (session.messages.length > MAX_HISTORY_MESSAGES) {
+                session.messages.splice(0, 2);
+        }
 
         session.lastActivity = ts;
         saveSession(sessionKey, session);
+}
+
+// Bungkus pesan TERBARU user dengan marker eksplisit biar model tau ini yang
+// harus dijawab SEKARANG, bukan diaduk-aduk dengan history lama.
+export function wrapCurrentUserMessage(userText, meta = {}) {
+        const ts = meta.timestamp || Date.now();
+        const tags = [`⏰ ${fmtTime(ts)}`];
+        if (meta.quotedBotText) {
+                const q = String(meta.quotedBotText).replace(/\s+/g, ' ').trim();
+                const excerpt = q.length > 140 ? q.slice(0, 140) + '...' : q;
+                tags.push(`↩️ BALAS PESAN BOT: "${excerpt}"`);
+        }
+        if (meta.mediaLabel) tags.push(`📎 ${String(meta.mediaLabel).toUpperCase()}`);
+        if (meta.userName)   tags.push(`👤 ${meta.userName}`);
+
+        const header = `━━━ 💬 PESAN BARU DARI USER — JAWAB INI SEKARANG ━━━\n[${tags.join(' | ')}]`;
+        const body = (userText && userText.trim().length > 0) ? `\n${userText}` : '';
+        const footer = `\n━━━ (akhir pesan baru) ━━━`;
+        return header + body + footer;
 }
 
 export function buildHistoryMeta(m, extra = {}) {

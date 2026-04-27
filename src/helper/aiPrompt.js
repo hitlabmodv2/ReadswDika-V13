@@ -430,18 +430,27 @@ export function buildWilyAICommandPrompt({
     userMemory = null,
 }) {
     const historyNote = hasHistory
-        ? `\n⚡ KONTEKS AKTIF: Kamu sedang MELANJUTKAN percakapan dengan ${userName}. History percakapan tersedia di atas. WAJIB gunakan informasi dari history — jika user menyebut "itu", "tadi", "yang kamu bilang", "lanjutkan", "sama gak", "bedanya apa", "mirip gak" dll → SELALU rujuk ke history. JANGAN mulai ulang seolah percakapan baru.
+        ? `\n⚡ KONTEKS AKTIF: Kamu sedang MELANJUTKAN percakapan dengan ${userName}.
 
-📑 FORMAT META HISTORY (penting dibaca):
-Setiap pesan di history diawali baris meta dalam kurung siku [ ... ] berisi:
+📍 STRUKTUR PESAN YANG KAMU TERIMA (PENTING — BACA INI DULU):
+  1. Pertama → instruksi/identitas kamu (yang sedang kamu baca sekarang)
+  2. Lalu → riwayat percakapan LAMA (urut dari paling lama → paling baru)
+  3. PALING BAWAH → blok "━━━ 💬 PESAN BARU DARI USER — JAWAB INI SEKARANG ━━━"
+     ⬆️ INI SAJA yang harus kamu jawab. History cuma untuk konteks, JANGAN dijawab ulang.
+
+⛔ ATURAN ANTI-NGAWUR:
+  • JANGAN aduk-aduk topik dari pesan lama ke pesan baru kecuali user secara eksplisit nyambungin
+  • JANGAN buat-buat fakta dari pesan lama yang sudah lewat ("tadi kan kita ngomong X" — kalau X tidak ada di history, JANGAN bilang gitu)
+  • Jika user nanya hal baru yang tidak nyambung dengan history → langsung jawab pertanyaan barunya, abaikan history
+  • Jika user pakai kata "itu/tadi/yang barusan/lanjutkan" → BARU rujuk history, dan rujuk yang PALING DEKAT dengan pesan baru
+
+📑 FORMAT META HISTORY:
+Setiap pesan history diawali baris meta dalam kurung siku [ ... ] berisi:
   • ⏰ <jam tanggal WIB>  → waktu pesan dikirim
-  • ↩️ BALAS PESAN BOT SEBELUMNYA: "<kutipan>"  → user lagi balas pesan bot YANG ITU spesifik
-  • 📎 KIRIM <jenis media>  → user kirim gambar/sticker/dll
+  • ↩️ BALAS PESAN BOT: "<kutipan>"  → user lagi balas pesan bot itu
+  • 📎 <jenis media>  → user kirim gambar/sticker/dll
   • 👤 <nama user>  → identitas pengirim
-JANGAN ulang/echo baris meta ini di balasanmu. Pakai HANYA untuk pahami konteks:
-  - Hitung selisih waktu antar pesan → tau ini lanjutan langsung atau topik baru setelah jeda lama
-  - Kalau user balas pesan lama bot, sambungkan ke topik kutipan tsb, BUKAN topik terakhir
-  - Kalau jeda > 1 jam dan user nyapa lagi → boleh sapa balik singkat, tapi tetap inget konteks lama` 
+JANGAN echo/ulang baris meta ini di balasanmu. Pakai HANYA untuk pahami konteks waktu & topik.` 
         : '';
 
     let quotedNote = '';

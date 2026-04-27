@@ -148,6 +148,13 @@ class Gemini {
     }
 
     async _callOnce({ token, model, contents, config }) {
+        // Default lebih rendah biar nggak ngarang. Caller bisa override via config.
+        const generationConfig = {
+            maxOutputTokens: 2048,
+            temperature: 0.7,
+            topP: 0.9,
+            ...config,
+        };
         const { data } = await axios.post(
             CHAT_URL,
             {
@@ -155,7 +162,7 @@ class Gemini {
                 stream: false,
                 request: {
                     contents,
-                    generationConfig: { maxOutputTokens: 2048, ...config },
+                    generationConfig,
                 },
             },
             {
