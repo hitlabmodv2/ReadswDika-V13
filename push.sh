@@ -154,24 +154,132 @@ classify_commit() {
   fi
 }
 
+# ===== Bersihkan stale index.lock (sisa run sebelumnya yang ke-interrupt) =====
+cleanup_stale_lock() {
+  local lock=".git/index.lock"
+  [ -f "$lock" ] || return 0
+
+  # Kalau lock lebih tua dari 30 detik → anggap stale, hapus.
+  local lock_age now mtime
+  now=$(date +%s)
+  mtime=$(stat -c %Y "$lock" 2>/dev/null || stat -f %m "$lock" 2>/dev/null || echo "$now")
+  lock_age=$((now - mtime))
+
+  if [ "$lock_age" -gt 30 ]; then
+    rm -f "$lock"
+    echo -e "  ${C_DIM}🧹 stale index.lock dihapus (umur ${lock_age}s)${C_RESET}"
+  fi
+}
+
+# ===== Scan working tree & index secara real-time =====
+# Output: kode_status<TAB>path  (pakai porcelain v1 biar stabil di semua versi git)
+scan_changes() {
+  git status --porcelain --untracked-files=all 2>/dev/null
+}
+
+# ===== Hitung breakdown perubahan dari hasil scan =====
+# $1 = output scan_changes
+# Set var global: CH_NEW CH_MOD CH_DEL CH_REN CH_TOTAL CH_LIST
+count_changes() {
+  local raw="$1"
+  CH_NEW=0; CH_MOD=0; CH_DEL=0; CH_REN=0; CH_TOTAL=0; CH_LIST=""
+
+  [ -z "$raw" ] && return 0
+
+  # Format porcelain v1: "XY path"  (X=index, Y=worktree). Untuk untracked: "?? path".
+  # Kita gabungkan: kalau X atau Y = A/?, hitung baru. M=mod, D=del, R=rename.
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    local code="${line:0:2}"
+    local path="${line:3}"
+    local x="${code:0:1}"
+    local y="${code:1:1}"
+
+    case "$code" in
+      "??") CH_NEW=$((CH_NEW + 1)) ;;
+      *)
+        case "$x$y" in
+          A*|*A) CH_NEW=$((CH_NEW + 1)) ;;
+          R*|*R) CH_REN=$((CH_REN + 1)) ;;
+          D*|*D) CH_DEL=$((CH_DEL + 1)) ;;
+          M*|*M) CH_MOD=$((CH_MOD + 1)) ;;
+        esac
+        ;;
+    esac
+    CH_TOTAL=$((CH_TOTAL + 1))
+    CH_LIST="${CH_LIST}${code}|${path}"$'\n'
+  done <<< "$raw"
+}
+
+# ===== Tampilkan ringkas perubahan ke user (max 8 baris) =====
+print_changes_preview() {
+  [ -z "$CH_LIST" ] && return 0
+  echo -e "  ${C_DIM}── perubahan terdeteksi ──${C_RESET}"
+  local shown=0
+  while IFS='|' read -r code path; do
+    [ -z "$path" ] && continue
+    local icon
+    case "$code" in
+      "??"|"A "|" A"|"AM") icon="${C_GREEN}➕${C_RESET}" ;;
+      "D "|" D"|"AD")      icon="${C_RED}❌${C_RESET}" ;;
+      "R "|" R"|"RM")      icon="${C_CYAN}⚙️ ${C_RESET}" ;;
+      "M "|" M"|"MM")      icon="${C_YELLOW}✏️ ${C_RESET}" ;;
+      *)                    icon="${C_DIM}•${C_RESET}" ;;
+    esac
+    if [ "$shown" -lt 8 ]; then
+      echo -e "    ${icon} ${path}"
+      shown=$((shown + 1))
+    fi
+  done <<< "$CH_LIST"
+  if [ "$CH_TOTAL" -gt 8 ]; then
+    echo -e "    ${C_DIM}… +$((CH_TOTAL - 8)) file lain${C_RESET}"
+  fi
+}
+
 # ===== Stage perubahan & deteksi =====
+# Return 0 kalau berhasil, 1 kalau ada error fatal saat staging.
 prepare_stage() {
-  # Hapus file sesi lama dari git (yang sekarang di-ignore)
-  git ls-files 'sessions/hisoka/*' 2>/dev/null | while read -r f; do
+  cleanup_stale_lock
+
+  local err_log
+  err_log=$(mktemp)
+
+  # Hapus file sesi lama dari git (yang sekarang di-ignore) — recursive.
+  # Pakai ls-files tanpa pola → list semua tracked, lalu filter.
+  git ls-files 2>/dev/null | grep -E '^sessions/hisoka/' | while read -r f; do
     case "$f" in
       sessions/hisoka/creds.json|sessions/hisoka/contacts.json|sessions/hisoka/groups.json) ;;
-      *) git rm --cached -q "$f" 2>/dev/null || true ;;
+      *) git rm --cached -q "$f" 2>>"$err_log" || true ;;
     esac
   done
 
-  git add -A
-  git add -f package-lock.json 2>/dev/null || true
-  git add -f .env 2>/dev/null || true
-  git add -f sessions/hisoka/creds.json 2>/dev/null || true
-  git add -f sessions/hisoka/contacts.json 2>/dev/null || true
-  git add -f sessions/hisoka/groups.json 2>/dev/null || true
-  git add -f attached_assets 2>/dev/null || true
-  git add -f .agents 2>/dev/null || true
+  # Stage SEMUA perubahan (baru, modified, deleted, rename).
+  if ! git add -A 2>>"$err_log"; then
+    echo -e "  ${C_RED}❌ git add -A gagal${C_RESET}"
+    sed 's/^/    /' "$err_log" | tail -10
+    rm -f "$err_log"
+    return 1
+  fi
+
+  # Force-add file penting yang biasanya di-ignore.
+  for forced in package-lock.json .env \
+                sessions/hisoka/creds.json \
+                sessions/hisoka/contacts.json \
+                sessions/hisoka/groups.json \
+                attached_assets .agents; do
+    [ -e "$forced" ] || continue
+    git add -f "$forced" 2>>"$err_log" || true
+  done
+
+  # Kalau ada error non-fatal, tampilkan singkat (tapi jangan stop).
+  if [ -s "$err_log" ]; then
+    local err_count
+    err_count=$(wc -l < "$err_log" | tr -d ' ')
+    echo -e "  ${C_DIM}⚠️  ${err_count} warning saat staging (diabaikan)${C_RESET}"
+  fi
+
+  rm -f "$err_log"
+  return 0
 }
 
 # ===== Ambil daftar branch (lokal + remote origin) =====
@@ -568,36 +676,60 @@ push_to_branch() {
     fi
   fi
 
-  prepare_stage
+  # ===== STEP 1: Scan working tree DULU (sebelum staging) =====
+  # Real-time snapshot — apa yang user lihat di disk sekarang.
+  local pre_scan
+  pre_scan=$(scan_changes)
+  count_changes "$pre_scan"
+  local pre_total=$CH_TOTAL
 
-  # Cek apakah ada perubahan yang baru di-stage (file baru / modified)
+  if [ "$pre_total" -gt 0 ]; then
+    echo -e "  ${C_CYAN}▸${C_RESET} scan working tree: ${C_BOLD}${pre_total}${C_RESET} file berubah ${C_DIM}(➕${CH_NEW} ✏️${CH_MOD} ❌${CH_DEL} ⚙️${CH_REN})${C_RESET}"
+    print_changes_preview
+  else
+    echo -e "  ${C_DIM}▸ scan working tree: 0 perubahan${C_RESET}"
+  fi
+
+  # ===== STEP 2: Stage semua perubahan =====
+  if ! prepare_stage; then
+    echo -e "  ${C_RED}❌ Gagal stage perubahan, skip branch ini.${C_RESET}"
+    return 1
+  fi
+
+  # ===== STEP 3: Verifikasi setelah staging =====
   local has_staged="no"
-  if ! git diff --cached --quiet; then
+  if ! git diff --cached --quiet 2>/dev/null; then
     has_staged="yes"
   fi
 
-  # Cek apakah branch lokal lebih maju dari remote (commit belum kepush)
+  # Sanity check: kalau scan bilang ADA perubahan tapi index kosong
+  # → staging gagal diam-diam (biasanya ke-block .gitignore yang terlalu agresif).
+  if [ "$pre_total" -gt 0 ] && [ "$has_staged" = "no" ]; then
+    echo -e "  ${C_YELLOW}⚠️  ${pre_total} file berubah di disk tapi tidak ke-stage.${C_RESET}"
+    echo -e "  ${C_DIM}   Kemungkinan ke-block .gitignore. Cek file di atas — kalau memang${C_RESET}"
+    echo -e "  ${C_DIM}   harus ikut, tambahkan ke daftar force-add di prepare_stage().${C_RESET}"
+  fi
+
+  # ===== STEP 4: Cek commit nunggak (lokal lebih maju dari remote) =====
   git fetch origin --quiet 2>/dev/null || true
   local ahead=0
   if git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
     ahead=$(git rev-list --count "origin/${branch}..HEAD" 2>/dev/null || echo "0")
   else
-    # Branch baru di lokal, belum ada di remote → semua commit "ahead"
     ahead=$(git rev-list --count HEAD 2>/dev/null || echo "0")
   fi
 
-  # Kalau nggak ada perubahan & nggak ada commit nunggak → benar-benar up-to-date
+  # ===== STEP 5: Putuskan aksi =====
   if [ "$has_staged" = "no" ] && [ "$ahead" -eq 0 ]; then
-    echo -e "  ${C_DIM}ℹ️  Tidak ada perubahan baru di branch ini.${C_RESET}"
+    echo -e "  ${C_DIM}ℹ️  Tidak ada perubahan baru & tidak ada commit nunggak.${C_RESET}"
     echo -e "  ${C_GREEN}✅ Sudah up-to-date${C_RESET} → ${C_BLUE}https://github.com/${USER}/${REPO}/tree/${branch}${C_RESET}"
     return 0
   fi
 
-  # Kalau ada file baru → commit dulu
   if [ "$has_staged" = "yes" ]; then
-    local total
-    total=$(git diff --cached --name-only | wc -l | tr -d ' ')
-    echo -e "  ${C_CYAN}▸${C_RESET} ${total} file berubah"
+    local staged_total
+    staged_total=$(git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
+    echo -e "  ${C_CYAN}▸${C_RESET} ${C_BOLD}${staged_total}${C_RESET} file di-stage, commit..."
 
     local MSG
     if [ -n "$CUSTOM_MSG" ]; then
@@ -606,10 +738,12 @@ push_to_branch() {
       MSG=$(classify_commit)
     fi
 
-    git commit -q -m "$MSG"
+    if ! git commit -q -m "$MSG" 2>/dev/null; then
+      echo -e "  ${C_RED}❌ git commit gagal${C_RESET}"
+      return 1
+    fi
     echo -e "  ${C_GREEN}✅${C_RESET} ${MSG}"
   else
-    # Nggak ada file baru, tapi ada commit lama yang belum kepush
     echo -e "  ${C_CYAN}▸${C_RESET} ${ahead} commit belum di-push, dorong sekarang..."
   fi
 
