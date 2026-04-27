@@ -204,6 +204,57 @@ scan_changes() {
   git status --porcelain --untracked-files=all 2>/dev/null
 }
 
+# ===== Scan file yang di-IGNORE .gitignore tapi baru dimodifikasi =====
+# Berguna buat ngingetin user "eh, ada file baru di folder data/ tapi
+# di-skip karena .gitignore — niat upload nggak?".
+# Set var global: IGN_LIST IGN_TOTAL
+scan_ignored_recent() {
+  IGN_LIST=""; IGN_TOTAL=0
+  # Folder yang sering jadi target user pengen upload tapi ke-ignore
+  local watch_paths=("data" "jadibot" "sessions/hisoka" "src" ".agents" "attached_assets")
+
+  local now mtime ageS rel
+  now=$(date +%s)
+
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    [ -f "$f" ] || continue
+    mtime=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo "$now")
+    ageS=$((now - mtime))
+    # Cuma yang dimodifikasi dalam 24 jam terakhir
+    if [ "$ageS" -le 86400 ]; then
+      rel="${f#./}"
+      IGN_LIST="${IGN_LIST}${ageS}|${rel}"$'\n'
+      IGN_TOTAL=$((IGN_TOTAL + 1))
+    fi
+  done < <(git ls-files --others --ignored --exclude-standard "${watch_paths[@]}" 2>/dev/null)
+}
+
+# ===== Tampilkan ringkas file ignored yang baru diubah =====
+print_ignored_preview() {
+  [ "$IGN_TOTAL" -eq 0 ] && return 0
+  echo -e "  ${C_YELLOW}⚠️  ${IGN_TOTAL} file di-skip oleh .gitignore tapi baru diubah:${C_RESET}"
+  local shown=0
+  # Sort by ageS asc (paling baru dulu)
+  while IFS='|' read -r ageS path; do
+    [ -z "$path" ] && continue
+    local human
+    if [ "$ageS" -lt 60 ]; then human="${ageS}d lalu"
+    elif [ "$ageS" -lt 3600 ]; then human="$((ageS / 60))m lalu"
+    elif [ "$ageS" -lt 86400 ]; then human="$((ageS / 3600))j lalu"
+    else human="$((ageS / 86400))h lalu"
+    fi
+    if [ "$shown" -lt 6 ]; then
+      echo -e "    ${C_DIM}🚫${C_RESET} ${path} ${C_DIM}(${human})${C_RESET}"
+      shown=$((shown + 1))
+    fi
+  done < <(echo "$IGN_LIST" | sort -n)
+  if [ "$IGN_TOTAL" -gt 6 ]; then
+    echo -e "    ${C_DIM}… +$((IGN_TOTAL - 6)) file lain${C_RESET}"
+  fi
+  echo -e "  ${C_DIM}   Mau ikut upload? Edit .gitignore atau tambah ke force-add di prepare_stage().${C_RESET}"
+}
+
 # ===== Hitung breakdown perubahan dari hasil scan =====
 # $1 = output scan_changes
 # Set var global: CH_NEW CH_MOD CH_DEL CH_REN CH_TOTAL CH_LIST
@@ -685,95 +736,49 @@ goodbye_prompt() {
   esac
 }
 
-# ===== Push ke 1 branch =====
-push_to_branch() {
-  local branch="$1"
-  echo ""
-  echo -e "${C_BOLD}${USER}/${REPO} → ${C_GREEN}${branch}${C_RESET}${C_BOLD} (upload)${C_RESET}"
+# ===== Commit semua perubahan pending di branch SEKARANG (sekali, sebelum loop push) =====
+# Return 0 = ada/tidak ada perubahan, semua handled. Return 1 = error fatal.
+# Set var global: COMMIT_DONE (yes/no), HEAD_SHA
+commit_pending_changes() {
+  COMMIT_DONE="no"
 
-  # Pastikan kita di branch tujuan.
-  # Pakai full ref `refs/remotes/origin/...` biar nggak bentrok sama remote
-  # lain yang punya branch dengan nama sama (mis. gitsafe-backup/main).
-  local checkout_log
-  checkout_log=$(mktemp)
-  if git show-ref --verify --quiet "refs/heads/${branch}"; then
-    # Branch lokal sudah ada → pindah ke sana.
-    git checkout -q "$branch" >"$checkout_log" 2>&1 || true
-  elif git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
-    # Branch ada di origin tapi belum ada lokal → bikin lokal dari origin
-    # pakai full ref biar 100% unambiguous.
-    git checkout -q -B "$branch" "refs/remotes/origin/${branch}" >"$checkout_log" 2>&1 || true
-  else
-    # Branch belum ada di mana-mana → bikin baru dari HEAD sekarang.
-    git checkout -q -b "$branch" >"$checkout_log" 2>&1 || true
-  fi
-
-  # Sanity check: pastikan benar-benar pindah. Kalau gagal, jangan lanjut push
-  # (biar error 'src refspec ... does not match any' nggak muncul).
-  local cur
-  cur=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-  if [ "$cur" != "$branch" ]; then
-    echo -e "  ${C_RED}❌ Gagal pindah ke branch '${branch}' — sekarang masih di '${cur}'${C_RESET}"
-    if [ -s "$checkout_log" ]; then
-      echo -e "  ${C_DIM}── error log ──${C_RESET}"
-      sed 's/^/    /' "$checkout_log" | tail -8
-    fi
-    echo -e "  ${C_DIM}   Tip: cek 'git remote -v' & 'git branch -a' kalau ada konflik nama.${C_RESET}"
-    rm -f "$checkout_log"
-    return 1
-  fi
-  rm -f "$checkout_log"
-
-  # ===== STEP 1: Scan working tree DULU (sebelum staging) =====
-  # Real-time snapshot — apa yang user lihat di disk sekarang.
+  # ===== STEP 1: Scan working tree real-time =====
   local pre_scan
   pre_scan=$(scan_changes)
   count_changes "$pre_scan"
   local pre_total=$CH_TOTAL
 
+  echo -e "${C_BOLD}🔍 Scan working tree${C_RESET} ${C_DIM}(branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null))${C_RESET}"
+
   if [ "$pre_total" -gt 0 ]; then
-    echo -e "  ${C_CYAN}▸${C_RESET} scan working tree: ${C_BOLD}${pre_total}${C_RESET} file berubah ${C_DIM}(➕${CH_NEW} ✏️${CH_MOD} ❌${CH_DEL} ⚙️${CH_REN})${C_RESET}"
+    echo -e "  ${C_CYAN}▸${C_RESET} ${C_BOLD}${pre_total}${C_RESET} file berubah ${C_DIM}(➕${CH_NEW} ✏️${CH_MOD} ❌${CH_DEL} ⚙️${CH_REN})${C_RESET}"
     print_changes_preview
   else
-    echo -e "  ${C_DIM}▸ scan working tree: 0 perubahan${C_RESET}"
+    echo -e "  ${C_DIM}▸ 0 perubahan di working tree${C_RESET}"
   fi
+
+  # ===== STEP 1.5: Scan file yang ke-ignore tapi baru diubah (warning aja) =====
+  scan_ignored_recent
+  print_ignored_preview
 
   # ===== STEP 2: Stage semua perubahan =====
   if ! prepare_stage; then
-    echo -e "  ${C_RED}❌ Gagal stage perubahan, skip branch ini.${C_RESET}"
+    echo -e "  ${C_RED}❌ Gagal stage perubahan${C_RESET}"
     return 1
   fi
 
-  # ===== STEP 3: Verifikasi setelah staging =====
+  # ===== STEP 3: Verifikasi index =====
   local has_staged="no"
   if ! git diff --cached --quiet 2>/dev/null; then
     has_staged="yes"
   fi
 
-  # Sanity check: kalau scan bilang ADA perubahan tapi index kosong
-  # → staging gagal diam-diam (biasanya ke-block .gitignore yang terlalu agresif).
   if [ "$pre_total" -gt 0 ] && [ "$has_staged" = "no" ]; then
-    echo -e "  ${C_YELLOW}⚠️  ${pre_total} file berubah di disk tapi tidak ke-stage.${C_RESET}"
-    echo -e "  ${C_DIM}   Kemungkinan ke-block .gitignore. Cek file di atas — kalau memang${C_RESET}"
-    echo -e "  ${C_DIM}   harus ikut, tambahkan ke daftar force-add di prepare_stage().${C_RESET}"
+    echo -e "  ${C_YELLOW}⚠️  ${pre_total} file berubah di disk tapi tidak ke-stage${C_RESET}"
+    echo -e "  ${C_DIM}   → biasanya ke-block .gitignore. Liat warning '🚫' di atas.${C_RESET}"
   fi
 
-  # ===== STEP 4: Cek commit nunggak (lokal lebih maju dari remote) =====
-  git fetch origin --quiet 2>/dev/null || true
-  local ahead=0
-  if git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
-    ahead=$(git rev-list --count "origin/${branch}..HEAD" 2>/dev/null || echo "0")
-  else
-    ahead=$(git rev-list --count HEAD 2>/dev/null || echo "0")
-  fi
-
-  # ===== STEP 5: Putuskan aksi =====
-  if [ "$has_staged" = "no" ] && [ "$ahead" -eq 0 ]; then
-    echo -e "  ${C_DIM}ℹ️  Tidak ada perubahan baru & tidak ada commit nunggak.${C_RESET}"
-    echo -e "  ${C_GREEN}✅ Sudah up-to-date${C_RESET} → ${C_BLUE}https://github.com/${USER}/${REPO}/tree/${branch}${C_RESET}"
-    return 0
-  fi
-
+  # ===== STEP 4: Commit kalau ada yang di-stage =====
   if [ "$has_staged" = "yes" ]; then
     local staged_total
     staged_total=$(git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
@@ -791,54 +796,90 @@ push_to_branch() {
       return 1
     fi
     echo -e "  ${C_GREEN}✅${C_RESET} ${MSG}"
-  else
-    echo -e "  ${C_CYAN}▸${C_RESET} ${ahead} commit belum di-push, dorong sekarang..."
+    COMMIT_DONE="yes"
   fi
 
-  echo -e "  ${C_CYAN}▸${C_RESET} push..."
-  local push_log
-  push_log=$(mktemp)
-  if ! git push -u origin "$branch" >"$push_log" 2>&1; then
-    echo -e "  ${C_YELLOW}⚠️  Push normal gagal, mencoba force push...${C_RESET}"
-    if ! git push --force -u origin "$branch" >"$push_log" 2>&1; then
-      echo -e "  ${C_RED}❌ Gagal push ke ${branch}${C_RESET}"
-      echo -e "  ${C_DIM}── error log ──${C_RESET}"
-      sed 's/^/    /' "$push_log" | tail -10
-      rm -f "$push_log"
-      return 1
-    fi
-  fi
-  rm -f "$push_log"
-
-  echo ""
-  echo -e "  ${C_GREEN}🎉 Sukses!${C_RESET} ${C_BOLD}${branch}${C_RESET} ${C_DIM}(upload)${C_RESET}"
-  echo -e "  ${C_BLUE}🔗 https://github.com/${USER}/${REPO}/tree/${branch}${C_RESET}"
+  HEAD_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "?")
   return 0
 }
 
+# ===== Push HEAD lokal ke branch tujuan di remote (TANPA pindah branch lokal) =====
+# Pakai pushspec `HEAD:refs/heads/<branch>` → kirim apapun yang lagi di HEAD
+# ke branch tujuan, gak peduli nama branch lokal apa. Ini bikin user bisa
+# kerja di branch X dan upload ke main/V14/dll dengan konten yang sama persis.
+push_head_to_branch() {
+  local branch="$1"
+  echo ""
+  echo -e "${C_BOLD}${USER}/${REPO} → ${C_GREEN}${branch}${C_RESET}${C_BOLD} (upload HEAD ${HEAD_SHA})${C_RESET}"
+
+  # Cek apakah HEAD sudah sama dengan origin/branch (no-op).
+  git fetch origin "$branch" --quiet 2>/dev/null || true
+  if git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
+    local local_sha remote_sha
+    local_sha=$(git rev-parse HEAD 2>/dev/null)
+    remote_sha=$(git rev-parse "refs/remotes/origin/${branch}" 2>/dev/null)
+    if [ "$local_sha" = "$remote_sha" ] && [ "$COMMIT_DONE" = "no" ]; then
+      echo -e "  ${C_DIM}ℹ️  HEAD sudah identik dengan origin/${branch}${C_RESET}"
+      echo -e "  ${C_GREEN}✅ Sudah up-to-date${C_RESET} → ${C_BLUE}https://github.com/${USER}/${REPO}/tree/${branch}${C_RESET}"
+      return 0
+    fi
+  fi
+
+  echo -e "  ${C_CYAN}▸${C_RESET} push HEAD → refs/heads/${branch}..."
+  local push_log
+  push_log=$(mktemp)
+
+  # Coba normal push dulu (fast-forward).
+  if git push origin "HEAD:refs/heads/${branch}" >"$push_log" 2>&1; then
+    rm -f "$push_log"
+    echo -e "  ${C_GREEN}🎉 Sukses!${C_RESET} ${C_BOLD}${branch}${C_RESET} ${C_DIM}(${HEAD_SHA})${C_RESET}"
+    echo -e "  ${C_BLUE}🔗 https://github.com/${USER}/${REPO}/tree/${branch}${C_RESET}"
+    return 0
+  fi
+
+  # Gagal — kemungkinan non-fast-forward. Coba force push.
+  echo -e "  ${C_YELLOW}⚠️  Push normal gagal (kemungkinan branch divergent), force push...${C_RESET}"
+  if git push --force origin "HEAD:refs/heads/${branch}" >"$push_log" 2>&1; then
+    rm -f "$push_log"
+    echo -e "  ${C_GREEN}🎉 Sukses (force)!${C_RESET} ${C_BOLD}${branch}${C_RESET} ${C_DIM}(${HEAD_SHA})${C_RESET}"
+    echo -e "  ${C_BLUE}🔗 https://github.com/${USER}/${REPO}/tree/${branch}${C_RESET}"
+    return 0
+  fi
+
+  echo -e "  ${C_RED}❌ Gagal push ke ${branch}${C_RESET}"
+  echo -e "  ${C_DIM}── error log ──${C_RESET}"
+  sed 's/^/    /' "$push_log" | tail -10
+  rm -f "$push_log"
+  return 1
+}
+
 # ===== Jalankan upload sesuai pilihan =====
+# Alur baru: commit SEKALI di branch sekarang, lalu push HEAD itu ke
+# semua branch tujuan. Gak ada switch branch — kerjamu aman.
 run_upload() {
   local count=${#SELECTED_BRANCHES[@]}
   local ok=0 fail=0
 
   if [ "$count" -gt 1 ]; then
     echo ""
-    echo -e "${C_MAGENTA}▶ Mode multi-branch${C_RESET} ${C_DIM}(${count} branch)${C_RESET}"
+    echo -e "${C_MAGENTA}▶ Mode multi-branch${C_RESET} ${C_DIM}(${count} branch tujuan • konten sama untuk semua)${C_RESET}"
   fi
 
-  local original_branch
-  original_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "$DEFAULT_BRANCH")
+  echo ""
+  # Commit perubahan pending di branch SEKARANG (cuma sekali).
+  if ! commit_pending_changes; then
+    echo -e "${C_RED}❌ Commit gagal, batal push.${C_RESET}"
+    return 1
+  fi
 
+  # Loop push HEAD ke semua branch tujuan.
   for b in "${SELECTED_BRANCHES[@]}"; do
-    if push_to_branch "$b"; then
+    if push_head_to_branch "$b"; then
       ok=$((ok + 1))
     else
       fail=$((fail + 1))
     fi
   done
-
-  # Balik ke branch awal
-  git checkout -q "$original_branch" 2>/dev/null || true
 
   if [ "$count" -gt 1 ]; then
     echo ""
