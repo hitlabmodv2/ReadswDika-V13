@@ -243,13 +243,15 @@ action_create_branch() {
   banner
   echo -e "${C_BOLD}🌱 Buat branch baru${C_RESET}"
   echo ""
-  printf "${C_DIM}Nama branch baru (kosong = batal) ▸ ${C_RESET}"
+  echo -e "  ${C_RED}0${C_RESET} ${C_DIM}kembali ke menu${C_RESET}"
+  echo ""
+  printf "${C_BOLD}Nama branch baru ▸ ${C_RESET}"
   local name
   read -r name
   name=$(echo "$name" | tr -d '[:space:]')
 
-  if [ -z "$name" ]; then
-    echo -e "${C_YELLOW}↩ Dibatalkan.${C_RESET}"
+  if [ -z "$name" ] || [ "$name" = "0" ]; then
+    echo -e "${C_YELLOW}↩ Kembali ke menu.${C_RESET}"
     sleep 1
     return
   fi
@@ -332,16 +334,16 @@ action_delete_branch() {
     i=$((i + 1))
   done
   echo ""
-  echo -e "  ${C_RED} 0${C_RESET} batal"
+  echo -e "  ${C_RED}0${C_RESET} ${C_DIM}kembali ke menu${C_RESET}"
   echo ""
-  printf "${C_BOLD}Pilih branch ▸ ${C_RESET}"
+  printf "${C_BOLD}Pilih branch [0/1-${total}] ▸ ${C_RESET}"
 
   local pick
   read -r pick
   pick="${pick:-0}"
 
   if [ "$pick" = "0" ]; then
-    echo -e "${C_YELLOW}↩ Dibatalkan.${C_RESET}"
+    echo -e "${C_YELLOW}↩ Kembali ke menu.${C_RESET}"
     sleep 1
     return
   fi
@@ -358,12 +360,14 @@ action_delete_branch() {
 
     echo ""
     echo -e "${C_RED}⚠️  Yakin hapus branch '${target}' dari lokal & remote?${C_RESET}"
-    printf "${C_BOLD}Ketik 'YES' untuk konfirmasi ▸ ${C_RESET}"
+    echo -e "  ${C_GREEN}YES${C_RESET}  ${C_DIM}lanjut hapus${C_RESET}"
+    echo -e "  ${C_RED}0${C_RESET}    ${C_DIM}batal & kembali ke menu${C_RESET}"
+    printf "${C_BOLD}Konfirmasi ▸ ${C_RESET}"
     local confirm
     read -r confirm
 
     if [ "$confirm" != "YES" ]; then
-      echo -e "${C_YELLOW}↩ Dibatalkan.${C_RESET}"
+      echo -e "${C_YELLOW}↩ Kembali ke menu.${C_RESET}"
       sleep 1
       return
     fi
