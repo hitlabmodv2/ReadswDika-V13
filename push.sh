@@ -202,12 +202,11 @@ fetch_branches() {
 # ===== Header banner =====
 banner() {
   clear 2>/dev/null || true
-  echo -e "${C_CYAN}╔══════════════════════════════════════════════════════════╗${C_RESET}"
-  echo -e "${C_CYAN}║${C_RESET}        ${C_BOLD}🚀  PUSH SCRIPT — BANG WILY  🚀${C_RESET}                ${C_CYAN}║${C_RESET}"
-  echo -e "${C_CYAN}║${C_RESET}        ${C_DIM}Auto Commit • Multi-Branch • Mobile Friendly${C_RESET}   ${C_CYAN}║${C_RESET}"
-  echo -e "${C_CYAN}╚══════════════════════════════════════════════════════════╝${C_RESET}"
-  echo -e "  ${C_DIM}Repo  :${C_RESET} ${C_BOLD}${USER}/${REPO}${C_RESET}"
-  echo -e "  ${C_DIM}Default:${C_RESET} ${C_GREEN}${DEFAULT_BRANCH}${C_RESET}"
+  echo -e "${C_BOLD}🚀 PUSH SCRIPT — BANG WILY${C_RESET}"
+  echo -e "${C_DIM}Auto Commit • Multi-Branch • Mobile Friendly${C_RESET}"
+  echo ""
+  echo -e "${C_DIM}Repo${C_RESET}    ${C_BOLD}${USER}/${REPO}${C_RESET}"
+  echo -e "${C_DIM}Default${C_RESET} ${C_GREEN}${DEFAULT_BRANCH}${C_RESET}"
   echo ""
 }
 
