@@ -570,25 +570,48 @@ push_to_branch() {
 
   prepare_stage
 
-  if git diff --cached --quiet; then
+  # Cek apakah ada perubahan yang baru di-stage (file baru / modified)
+  local has_staged="no"
+  if ! git diff --cached --quiet; then
+    has_staged="yes"
+  fi
+
+  # Cek apakah branch lokal lebih maju dari remote (commit belum kepush)
+  git fetch origin --quiet 2>/dev/null || true
+  local ahead=0
+  if git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
+    ahead=$(git rev-list --count "origin/${branch}..HEAD" 2>/dev/null || echo "0")
+  else
+    # Branch baru di lokal, belum ada di remote → semua commit "ahead"
+    ahead=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+  fi
+
+  # Kalau nggak ada perubahan & nggak ada commit nunggak → benar-benar up-to-date
+  if [ "$has_staged" = "no" ] && [ "$ahead" -eq 0 ]; then
     echo -e "  ${C_DIM}ℹ️  Tidak ada perubahan baru di branch ini.${C_RESET}"
     echo -e "  ${C_GREEN}✅ Sudah up-to-date${C_RESET} → ${C_BLUE}https://github.com/${USER}/${REPO}/tree/${branch}${C_RESET}"
     return 0
   fi
 
-  local total
-  total=$(git diff --cached --name-only | wc -l | tr -d ' ')
-  echo -e "  ${C_CYAN}▸${C_RESET} ${total} file berubah"
+  # Kalau ada file baru → commit dulu
+  if [ "$has_staged" = "yes" ]; then
+    local total
+    total=$(git diff --cached --name-only | wc -l | tr -d ' ')
+    echo -e "  ${C_CYAN}▸${C_RESET} ${total} file berubah"
 
-  local MSG
-  if [ -n "$CUSTOM_MSG" ]; then
-    MSG="$CUSTOM_MSG"
+    local MSG
+    if [ -n "$CUSTOM_MSG" ]; then
+      MSG="$CUSTOM_MSG"
+    else
+      MSG=$(classify_commit)
+    fi
+
+    git commit -q -m "$MSG"
+    echo -e "  ${C_GREEN}✅${C_RESET} ${MSG}"
   else
-    MSG=$(classify_commit)
+    # Nggak ada file baru, tapi ada commit lama yang belum kepush
+    echo -e "  ${C_CYAN}▸${C_RESET} ${ahead} commit belum di-push, dorong sekarang..."
   fi
-
-  git commit -q -m "$MSG"
-  echo -e "  ${C_GREEN}✅${C_RESET} ${MSG}"
 
   echo -e "  ${C_CYAN}▸${C_RESET} push..."
   local push_log
