@@ -344,7 +344,8 @@ prepare_stage() {
                 sessions/hisoka/creds.json \
                 sessions/hisoka/contacts.json \
                 sessions/hisoka/groups.json \
-                attached_assets .agents; do
+                attached_assets .agents \
+                .replit node_modules; do
     [ -e "$forced" ] || continue
     git add -f "$forced" 2>>"$err_log" || true
   done

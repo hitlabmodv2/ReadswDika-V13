@@ -6,13 +6,17 @@ vite.config.ts.*
 .upm
 tmp/
 bin/
-.replit
 replit.md
 .local
 .cache
 .config
 data
 index.d.ts
+
+# Force-include node_modules dan .replit (override system gitignore)
+!node_modules
+!node_modules/**
+!.replit
 
 # Sessions — cuma 3 file penting di hisoka yang di-upload
 sessions/**
