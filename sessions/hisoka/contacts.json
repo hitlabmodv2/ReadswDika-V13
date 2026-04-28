@@ -91,7 +91,8 @@
   },
   "6285956660403@s.whatsapp.net": {
     "id": "6285956660403@s.whatsapp.net",
-    "notify": "Cosmouz"
+    "notify": "Cosmouz",
+    "verifiedName": "Cosmouz"
   },
   "81582920577063@lid": {
     "id": "81582920577063@lid",
@@ -131,5 +132,19 @@
     "id": "176549462564879@lid",
     "lid": "176549462564879@lid",
     "notify": "Cosmouz"
+  },
+  "6285728458204@s.whatsapp.net": {
+    "id": "6285728458204@s.whatsapp.net",
+    "notify": "Tea.. Time"
+  },
+  "6285163013550@s.whatsapp.net": {
+    "id": "6285163013550@s.whatsapp.net",
+    "notify": "Alma",
+    "verifiedName": "Alma"
+  },
+  "184306207039714@lid": {
+    "id": "184306207039714@lid",
+    "lid": "184306207039714@lid",
+    "imgUrl": "changed"
   }
 }

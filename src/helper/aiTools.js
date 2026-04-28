@@ -45,7 +45,88 @@ const aiToolsError = (...args) => {
 };
 
 // ════════════════════════════════════════════════════════════
-//  GOOGLE TTS  (free, no API key — pakai endpoint translate)
+//  EDGE NEURAL TTS  (free, no API key — Microsoft Azure voices)
+//  Suaranya jauh lebih natural dibanding Google Translate TTS.
+//  Voice mapping per bahasa di EDGE_VOICES.
+//  Fallback otomatis ke Google TTS kalau Edge gagal.
+// ════════════════════════════════════════════════════════════
+
+// Voice + prosody preset per bahasa.
+// Indonesia → suara cewek muda natural (Gadis).
+// Jepang   → cewek kawaii (Nanami) + pitch tinggi & rate cepat ala
+//            karakter Honolulu dari Azur Lane.
+const EDGE_VOICES = {
+    'id':    { voice: 'id-ID-GadisNeural',  pitch: '+0Hz',  rate: '+0%' },
+    'ja':    { voice: 'ja-JP-NanamiNeural', pitch: '+25Hz', rate: '+8%' }, // Honolulu kawaii
+    'en':    { voice: 'en-US-JennyNeural',  pitch: '+0Hz',  rate: '+0%' },
+    'ko':    { voice: 'ko-KR-SunHiNeural',  pitch: '+0Hz',  rate: '+0%' },
+    'zh-CN': { voice: 'zh-CN-XiaoxiaoNeural', pitch: '+0Hz', rate: '+0%' },
+    'zh-TW': { voice: 'zh-TW-HsiaoChenNeural', pitch: '+0Hz', rate: '+0%' },
+    'ar':    { voice: 'ar-SA-ZariyahNeural', pitch: '+0Hz', rate: '+0%' },
+    'es':    { voice: 'es-ES-ElviraNeural', pitch: '+0Hz',  rate: '+0%' },
+    'fr':    { voice: 'fr-FR-DeniseNeural', pitch: '+0Hz',  rate: '+0%' },
+    'de':    { voice: 'de-DE-KatjaNeural',  pitch: '+0Hz',  rate: '+0%' },
+    'it':    { voice: 'it-IT-ElsaNeural',   pitch: '+0Hz',  rate: '+0%' },
+    'pt':    { voice: 'pt-BR-FranciscaNeural', pitch: '+0Hz', rate: '+0%' },
+    'ru':    { voice: 'ru-RU-SvetlanaNeural', pitch: '+0Hz', rate: '+0%' },
+    'tr':    { voice: 'tr-TR-EmelNeural',   pitch: '+0Hz',  rate: '+0%' },
+    'th':    { voice: 'th-TH-PremwadeeNeural', pitch: '+0Hz', rate: '+0%' },
+    'vi':    { voice: 'vi-VN-HoaiMyNeural', pitch: '+0Hz',  rate: '+0%' },
+    'hi':    { voice: 'hi-IN-SwaraNeural',  pitch: '+0Hz',  rate: '+0%' },
+    'jw':    { voice: 'id-ID-GadisNeural',  pitch: '+0Hz',  rate: '+0%' }, // Jawa pakai voice ID
+    'su':    { voice: 'id-ID-GadisNeural',  pitch: '+0Hz',  rate: '+0%' }, // Sunda pakai voice ID
+};
+
+const EDGE_OUTPUT_FORMAT = 'audio-24khz-48kbitrate-mono-mp3';
+
+/**
+ * Generate voice note pakai Microsoft Edge Neural TTS (gratis, no API key).
+ * Suara cewek natural ala asli, bukan robot.
+ * @param {string} text - Teks yang diucapkan.
+ * @param {string} lang - Kode bahasa: 'id', 'ja', 'en', dll.
+ * @returns {Promise<Buffer>} Buffer mp3.
+ */
+export async function edgeTTS(text, lang = 'id') {
+    const cleanText = String(text || '').replace(/[\[\]]/g, '').trim();
+    if (!cleanText) throw new Error('Teks TTS kosong');
+    if (cleanText.length > 3000) {
+        throw new Error('Teks TTS terlalu panjang (max 3000 karakter)');
+    }
+
+    const preset = EDGE_VOICES[lang] || EDGE_VOICES['id'];
+    const { MsEdgeTTS } = await import('msedge-tts');
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata(preset.voice, EDGE_OUTPUT_FORMAT);
+
+    const { audioStream } = await tts.toStream(cleanText, {
+        pitch: preset.pitch,
+        rate: preset.rate,
+    });
+
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        const timer = setTimeout(() => {
+            try { audioStream.destroy?.(); } catch (_) {}
+            reject(new Error('Edge TTS timeout (>30s)'));
+        }, 30000);
+        audioStream.on('data', c => chunks.push(c));
+        audioStream.on('end', () => {
+            clearTimeout(timer);
+            const buf = Buffer.concat(chunks);
+            if (buf.length < 100) {
+                return reject(new Error('Edge TTS response kosong (voice mungkin tidak support)'));
+            }
+            resolve(buf);
+        });
+        audioStream.on('error', e => {
+            clearTimeout(timer);
+            reject(new Error(`Edge TTS stream error: ${e.message}`));
+        });
+    });
+}
+
+// ════════════════════════════════════════════════════════════
+//  GOOGLE TTS  (fallback — free, no API key, suara kurang natural)
 // ════════════════════════════════════════════════════════════
 
 const TTS_MAX_CHUNK = 190; // safe limit per request
@@ -322,13 +403,22 @@ export async function extractVoiceNotesFromText(text) {
 
         if (!vnText) continue;
         const lang = resolveVnLang(langCode);
+        let buffer = null;
+        let engine = 'edge';
         try {
-            const buffer = await googleTTS(vnText, lang);
-            voiceNotes.push({ buffer, text: vnText, lang });
-            aiToolsLog(`[AITool/VN] ✅ [${lang}] "${vnText.slice(0, 50)}..." (${(buffer.length / 1024).toFixed(1)} KB)`);
-        } catch (e) {
-            aiToolsError(`[AITool/VN] ❌ Gagal TTS [${lang}] untuk "${vnText.slice(0, 40)}...": ${e.message}`);
+            buffer = await edgeTTS(vnText, lang);
+        } catch (edgeErr) {
+            aiToolsError(`[AITool/VN] ⚠️ Edge TTS gagal [${lang}], fallback ke Google: ${edgeErr.message}`);
+            engine = 'google';
+            try {
+                buffer = await googleTTS(vnText, lang);
+            } catch (googleErr) {
+                aiToolsError(`[AITool/VN] ❌ Semua TTS gagal [${lang}] untuk "${vnText.slice(0, 40)}...": ${googleErr.message}`);
+                continue;
+            }
         }
+        voiceNotes.push({ buffer, text: vnText, lang, engine });
+        aiToolsLog(`[AITool/VN] ✅ [${engine}/${lang}] "${vnText.slice(0, 50)}..." (${(buffer.length / 1024).toFixed(1)} KB)`);
     }
 
     cleanText = cleanText.replace(/\n{3,}/g, '\n\n').trim();
