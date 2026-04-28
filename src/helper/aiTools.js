@@ -567,8 +567,178 @@ export function hasMediaDownloadMarker(text) {
 }
 
 /**
- * Helper: cek apakah teks mengandung marker STIKER.
+ * Helper: cek apakah teks mengandung marker STIKER atau REPLY-STIKER.
  */
 export function hasStickerMarker(text) {
-    return /\[(?:STIKER|STICKER):\s*[^\]]+\]/i.test(text);
+    return /\[(?:STIKER|STICKER|REPLY-STIKER|REPLY-STICKER):\s*[^\]]+\]/i.test(text);
+}
+
+// ════════════════════════════════════════════════════════════
+//  REPLY STICKER  — sticker reaksi karakter Honolulu (Azur Lane)
+//  Marker: [REPLY-STIKER: emosi]
+//  Sumber: safebooru.org tag honolulu_(azur_lane) + ekspresi
+//  Output: webp sticker yang dikirim sebagai quoted reply user
+// ════════════════════════════════════════════════════════════
+
+// Mapping emosi → kandidat tag safebooru (urut prioritas, fallback otomatis).
+// Semua tag dipakai bareng "honolulu_(azur_lane) 1girl solo".
+const HONOLULU_EMOTION_TAGS = {
+    senang:   ['smile open_mouth', 'smile :d', 'smile', 'happy'],
+    bahagia:  ['smile open_mouth', 'smile :d', 'smile'],
+    tersenyum:['smile', 'smile closed_eyes'],
+    tertawa:  ['laughing', 'smile open_mouth', 'smile :d'],
+    sedih:    ['tears', 'crying', 'sad', 'frown'],
+    nangis:   ['crying', 'tears', 'tearing_up'],
+    kecewa:   ['frown', 'sad', 'disappointed'],
+    malu:     ['blush embarrassed', 'blush', 'flying_sweatdrops blush'],
+    blush:    ['blush', 'blush smile', 'embarrassed blush'],
+    kaget:    ['surprised open_mouth', 'surprised', 'startled'],
+    terkejut: ['surprised', 'surprised open_mouth', 'shocked'],
+    ngambek:  ['pout', 'angry pout', 'puffy_cheeks'],
+    marah:    ['angry', 'angry open_mouth', 'glaring'],
+    kesel:    ['annoyed', 'angry', 'pout'],
+    cinta:    ['heart', 'heart-shaped_pupils', 'love'],
+    suka:     ['heart', 'smile heart', 'blush smile'],
+    manja:    ['smile half-closed_eyes', 'wink', 'smug'],
+    centil:   ['wink', 'smug', 'smirk'],
+    nakal:    ['smug', 'smirk', 'wink'],
+    wink:     ['wink', 'one_eye_closed'],
+    ngantuk:  ['sleepy', 'half-closed_eyes', 'yawning'],
+    tidur:    ['sleeping', 'closed_eyes lying', 'sleepy'],
+    netral:   ['', 'simple_background', 'looking_at_viewer'],
+    biasa:    ['', 'simple_background', 'looking_at_viewer'],
+    bingung:  ['confused', '?', '...', 'tilted_head'],
+    bengong:  ['blank_stare', 'half-closed_eyes', 'expressionless'],
+    malam:    ['night', 'moon', 'starry_sky'],
+    pagi:     ['morning', 'sunrise', 'outdoors'],
+    hype:     ['open_mouth smile', 'excited', 'cheering'],
+    semangat: ['open_mouth smile', 'cheering', 'excited'],
+    tegas:    ['serious', 'closed_mouth serious', 'glaring'],
+    bangga:   ['smug', 'proud', 'hands_on_hips'],
+    pose:     ['hand_on_hip', 'pose', 'looking_at_viewer'],
+    keren:    ['serious', 'cool', 'closed_mouth'],
+    food:     ['food', 'eating', 'open_mouth food'],
+    makan:    ['eating', 'food', 'open_mouth food'],
+    salam:    ['waving', 'salute', 'open_mouth smile'],
+    hai:      ['waving', 'open_mouth smile', 'salute'],
+    bye:      ['waving', '_/', 'looking_at_viewer'],
+    ok:       ['ok_sign', 'thumbs_up', 'smile'],
+    jempol:   ['thumbs_up', 'ok_sign'],
+};
+
+const SAFEBOORU_BASE = 'https://safebooru.org/index.php';
+const HONOLULU_BASE_TAGS = 'honolulu_(azur_lane) 1girl solo';
+
+/**
+ * Cari satu gambar Honolulu di safebooru sesuai emosi.
+ * @param {string} emosi - kunci di HONOLULU_EMOTION_TAGS (case-insensitive).
+ * @returns {Promise<{buffer: Buffer, url: string, tags: string} | null>}
+ */
+export async function searchHonoluluSticker(emosi) {
+    const key = String(emosi || '').toLowerCase().trim();
+    const candidates = HONOLULU_EMOTION_TAGS[key] || HONOLULU_EMOTION_TAGS['netral'];
+
+    for (const extraTag of candidates) {
+        const tags = `${HONOLULU_BASE_TAGS}${extraTag ? ' ' + extraTag : ''}`;
+        try {
+            const params = new URLSearchParams({
+                page: 'dapi', s: 'post', q: 'index', json: '1',
+                limit: '20', tags,
+            });
+            const url = `${SAFEBOORU_BASE}?${params.toString()}`;
+            const res = await axios.get(url, {
+                timeout: 12000,
+                headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36' },
+            });
+            const posts = Array.isArray(res.data) ? res.data : [];
+            if (posts.length === 0) continue;
+
+            // Random pick biar sticker tidak monoton
+            const pick = posts[Math.floor(Math.random() * Math.min(posts.length, 10))];
+            const imgUrl = `https://safebooru.org/images/${pick.directory}/${pick.image}`;
+
+            const imgRes = await axios.get(imgUrl, {
+                responseType: 'arraybuffer',
+                timeout: 20000,
+                headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://safebooru.org/' },
+            });
+            const buffer = Buffer.from(imgRes.data);
+            if (buffer.length < 1000) continue;
+
+            return { buffer, url: imgUrl, tags };
+        } catch (e) {
+            aiToolsError(`[AITool/REPLY-STIKER] safebooru gagal "${tags}": ${e.message}`);
+        }
+    }
+    return null;
+}
+
+/**
+ * Parse [REPLY-STIKER: emosi] / [REPLY-STICKER: emosi] dari response AI,
+ * cari sticker karakter Honolulu yang cocok mood, konversi ke webp.
+ * @param {string} text
+ * @param {object} opts - { pack?: string, author?: string }
+ * @returns {Promise<{cleanText: string, stickers: Array<{buffer, emosi, sourceUrl}>}>}
+ */
+export async function extractReplyStickersFromText(text, opts = {}) {
+    const stickers = [];
+    let cleanText = String(text || '');
+
+    const regex = /\[(?:REPLY-STIKER|REPLY-STICKER):\s*([^\]]{1,80})\]/gi;
+    const matches = [...cleanText.matchAll(regex)];
+
+    if (matches.length === 0) return { cleanText, stickers };
+
+    let StickerCtor = null;
+    let StickerTypesEnum = null;
+    try {
+        const mod = await import('wa-sticker-formatter');
+        StickerCtor = mod.Sticker;
+        StickerTypesEnum = mod.StickerTypes;
+    } catch (e) {
+        aiToolsError(`[AITool/REPLY-STIKER] wa-sticker-formatter tidak tersedia: ${e.message}`);
+        for (const match of matches) cleanText = cleanText.split(match[0]).join('');
+        return { cleanText: cleanText.replace(/\n{3,}/g, '\n\n').trim(), stickers };
+    }
+
+    const packName = opts.pack || 'Honolulu - Azur Lane';
+    const authorName = opts.author || 'Wily Bot';
+
+    for (const match of matches) {
+        const fullMarker = match[0];
+        const emosi = match[1].trim().toLowerCase();
+        cleanText = cleanText.split(fullMarker).join('');
+        if (!emosi) continue;
+
+        try {
+            const found = await searchHonoluluSticker(emosi);
+            if (!found) {
+                aiToolsError(`[AITool/REPLY-STIKER] tidak ada hasil untuk emosi "${emosi}"`);
+                continue;
+            }
+            const sticker = new StickerCtor(found.buffer, {
+                pack: packName,
+                author: authorName,
+                type: StickerTypesEnum.FULL,
+                categories: ['⚓', '✨'],
+                id: `honolulu.${emosi}.${Date.now()}`,
+                quality: 65,
+            });
+            const buffer = await sticker.toBuffer();
+            stickers.push({ buffer, emosi, sourceUrl: found.url });
+            aiToolsLog(`[AITool/REPLY-STIKER] ✅ "${emosi}" → ${(buffer.length / 1024).toFixed(1)} KB webp`);
+        } catch (e) {
+            aiToolsError(`[AITool/REPLY-STIKER] gagal "${emosi}": ${e.message}`);
+        }
+    }
+
+    cleanText = cleanText.replace(/\n{3,}/g, '\n\n').trim();
+    return { cleanText, stickers };
+}
+
+/**
+ * Daftar emosi yang didukung — buat di-inject ke prompt AI.
+ */
+export function getHonoluluEmotionList() {
+    return Object.keys(HONOLULU_EMOTION_TAGS);
 }

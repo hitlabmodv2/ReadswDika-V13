@@ -45,7 +45,7 @@ import gemini from '../helper/gemini.js';
 import { updateUserName, getUserName } from '../db/userDb.js';
 import { loadUserMemory, detectAndUpdateMemory, clearUserMemory, memoryToReadable } from '../helper/userMemory.js';
 import { searchAndGetImage, searchAndGetImages, extractImagesFromText } from '../helper/imageSearch.js';
-import { extractVoiceNotesFromText, extractSongsFromText, extractVideosFromText, extractStickersFromText, hasMediaDownloadMarker, hasStickerMarker } from '../helper/aiTools.js';
+import { extractVoiceNotesFromText, extractSongsFromText, extractVideosFromText, extractStickersFromText, extractReplyStickersFromText, hasMediaDownloadMarker, hasStickerMarker } from '../helper/aiTools.js';
 import { getHistory, addToHistory, clearHistory, clearAllHistory, countHistory, getSessionKey, buildHistoryMeta, wrapCurrentUserMessage } from '../db/aiHistory.js';
 import { sendAIReply } from '../helper/aiReact.js';
 import { buildSmartAlbumCaptionPrompt, buildSmartImageHistoryPrompt, buildSmartImageWaitPrompt, buildWilyAICommandPrompt, buildWilyFallbackUserPrompt, buildWilyMediaUserPrompt, buildWilyVisionContextPrompt } from '../helper/aiPrompt.js';
@@ -706,7 +706,7 @@ async function processAIMediaAndSend(hisoka, m, response) {
     working = imgRes.cleanText;
     const images = imgRes.images || [];
 
-    // ── 2. STIKER (search img → webp) ──
+    // ── 2. STIKER (search img → webp) + REPLY-STIKER (Honolulu Azur Lane) ──
     let stickers = [];
     if (hasStickerMarker(working)) {
         try {
@@ -715,6 +715,15 @@ async function processAIMediaAndSend(hisoka, m, response) {
             stickers = stickerRes.stickers || [];
         } catch (e) {
             wilyError(`[AIMedia] ❌ extractStickers gagal: ${e.message}`);
+        }
+        try {
+            const replyStkRes = await extractReplyStickersFromText(working);
+            working = replyStkRes.cleanText;
+            if (replyStkRes.stickers?.length) {
+                stickers.push(...replyStkRes.stickers);
+            }
+        } catch (e) {
+            wilyError(`[AIMedia] ❌ extractReplyStickers gagal: ${e.message}`);
         }
     }
 
