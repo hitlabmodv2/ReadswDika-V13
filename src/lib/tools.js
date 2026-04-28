@@ -396,21 +396,44 @@ export class Gemini {
         }
     }
     
-    async chat({ contents, model = 'gemini-flash-latest', ...config }) {
+    async chat({ contents, model = 'gemini-flash-latest', systemInstruction, ...config }) {
         try {
             if (!Array.isArray(contents)) throw new Error('Contents must be a array.');
+
+            // Sanitasi: Gemini cuma terima role 'user' atau 'model' di contents.
+            // Auto-extract role 'system' jadi systemInstruction, dan map 'assistant' -> 'model'.
+            const sysParts = [];
+            const cleanContents = [];
+            for (const c of contents) {
+                if (!c || !Array.isArray(c.parts)) continue;
+                const role = String(c.role || 'user').toLowerCase();
+                if (role === 'system') { sysParts.push(...c.parts); continue; }
+                cleanContents.push({
+                    role: role === 'assistant' || role === 'model' ? 'model' : 'user',
+                    parts: c.parts,
+                });
+            }
+            if (systemInstruction && typeof systemInstruction === 'string') {
+                sysParts.unshift({ text: systemInstruction });
+            } else if (systemInstruction?.parts) {
+                sysParts.unshift(...systemInstruction.parts);
+            }
+
             const authToken = await this.getAuthToken();
-            
+
+            const requestBody = {
+                contents: cleanContents,
+                generationConfig: {
+                    maxOutputTokens: 8192,
+                    ...config
+                }
+            };
+            if (sysParts.length) requestBody.systemInstruction = { parts: sysParts };
+
             const { data } = await axios.post('https://asia-northeast3-gemmy-ai-bdc03.cloudfunctions.net/gemini', {
                 model,
                 stream: false,
-                request: {
-                    contents: contents,
-                    generationConfig: {
-                        maxOutputTokens: 8192,
-                        ...config
-                    }
-                }
+                request: requestBody,
             }, {
                 headers: {
                     'accept-encoding': 'gzip',
@@ -419,12 +442,26 @@ export class Gemini {
                     'user-agent': 'okhttp/5.3.2',
                 }
             });
-            
+
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (!text) throw new Error('Gemini returned empty response.');
-            
+            if (!text) {
+                const blockReason = data.promptFeedback?.blockReason;
+                if (blockReason) throw new Error(`Gemini blocked the request: ${blockReason}`);
+                throw new Error('Gemini returned empty response.');
+            }
+
             return text;
         } catch (error) {
+            // Surface body Gemini error supaya gampang debug (bukan cuma "400")
+            if (error.response?.data) {
+                const body = typeof error.response.data === 'string'
+                    ? error.response.data
+                    : JSON.stringify(error.response.data);
+                const status = error.response.status;
+                const err = new Error(`Gemini ${status}: ${body.slice(0, 500)}`);
+                err.cause = error;
+                throw err;
+            }
             throw new Error(error.message);
         }
     }

@@ -109,5 +109,9 @@
         "welcome": true
       }
     }
+  },
+  "fiora": {
+    "enabled": true,
+    "autoTrigger": true
   }
 }

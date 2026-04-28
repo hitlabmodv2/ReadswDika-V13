@@ -8175,10 +8175,84 @@ ${result.url}`;
 
                         case 'fiora': {
                                 try {
+                                        const inputRaw = (query || text || '').trim();
+                                        const lower = inputRaw.toLowerCase();
+                                        const firstWord = lower.split(/\s+/)[0] || '';
+                                        const restAfterFirst = inputRaw.slice(firstWord.length).trim();
+
+                                        // Subcommand: .fiora on / .fiora off → master switch (owner)
+                                        if (firstWord === 'on' || firstWord === 'off') {
+                                                if (!m.isOwner) { await tolak(hisoka, m, '⛔ Khusus owner.'); break; }
+                                                const { setFioraConfig, getFioraConfig } = await import('./fiora.js');
+                                                setFioraConfig({ enabled: firstWord === 'on' });
+                                                const cfg = getFioraConfig();
+                                                await tolak(hisoka, m, `🧠 Fiora AI: *${cfg.enabled ? '🟢 ON' : '🔴 OFF'}*\n_Tersimpan ke config.json._`);
+                                                logCommand(m, hisoka, 'fiora_toggle');
+                                                break;
+                                        }
+
+                                        // Subcommand: .fiora auto on|off|toggle (owner)
+                                        if (firstWord === 'auto') {
+                                                if (!m.isOwner) { await tolak(hisoka, m, '⛔ Khusus owner.'); break; }
+                                                const sub = (restAfterFirst.split(/\s+/)[0] || '').toLowerCase();
+                                                const { setFioraConfig, getFioraConfig } = await import('./fiora.js');
+                                                const cur = getFioraConfig();
+                                                const next = sub === 'on' ? true : sub === 'off' ? false : !cur.autoTrigger;
+                                                setFioraConfig({ autoTrigger: next });
+                                                await tolak(hisoka, m, `🤖 Fiora auto-trigger: *${next ? '🟢 ON' : '🔴 OFF'}*\n_Tersimpan ke config.json._`);
+                                                logCommand(m, hisoka, 'fiora_auto');
+                                                break;
+                                        }
+
+                                        // Subcommand: .fiora status
+                                        if (firstWord === 'status') {
+                                                const { getFioraConfig, getFioraHistoryStats } = await import('./fiora.js');
+                                                const cfg = getFioraConfig();
+                                                const stat = getFioraHistoryStats(m.from);
+                                                const p = m.prefix || '.';
+                                                await tolak(hisoka, m, [
+                                                        '🧠 *Fiora AI — Status*',
+                                                        `• Master       : ${cfg.enabled ? '🟢 ON' : '🔴 OFF'}`,
+                                                        `• Auto-trigger : ${cfg.autoTrigger ? '🟢 ON' : '🔴 OFF'}`,
+                                                        `• History chat ini: ${stat.count} pesan`,
+                                                        '',
+                                                        '📖 *Cara pakai*',
+                                                        `• ${p}fiora <pertanyaan>  — tanya Fiora`,
+                                                        `• ${p}fiora reset        — hapus history chat ini`,
+                                                        `• ${p}fiora status        — tampilkan info ini`,
+                                                        '',
+                                                        '👑 *Owner only*',
+                                                        `• ${p}fiora on | off     — nyalain/matiin Fiora`,
+                                                        `• ${p}fiora auto on|off  — toggle auto-trigger`,
+                                                        `• ${p}fiora reset all    — hapus history semua chat`,
+                                                ].join('\n'));
+                                                logCommand(m, hisoka, 'fiora_status');
+                                                break;
+                                        }
+
+                                        // Subcommand: .fiora reset / .fiora clear  (opsional: " all" → owner-only)
+                                        if (firstWord === 'reset' || firstWord === 'clear') {
+                                                const sub = (restAfterFirst.split(/\s+/)[0] || '').toLowerCase();
+                                                const { clearFioraHistory, clearFioraHistoryAll, getFioraHistoryStats } = await import('./fiora.js');
+                                                if (sub === 'all' || sub === 'global') {
+                                                        if (!m.isOwner) { await tolak(hisoka, m, '⛔ Khusus owner.'); break; }
+                                                        const total = clearFioraHistoryAll();
+                                                        await tolak(hisoka, m, `🧹 History Fiora *semua chat* dihapus (${total} pesan).`);
+                                                } else {
+                                                        const before = getFioraHistoryStats(m.from).count;
+                                                        const cleared = clearFioraHistory(m.from);
+                                                        if (before === 0) await tolak(hisoka, m, '🪹 Belum ada history Fiora di chat ini.');
+                                                        else await tolak(hisoka, m, `🧹 History Fiora di chat ini dihapus (${cleared} pesan). Mulai obrolan baru!`);
+                                                }
+                                                logCommand(m, hisoka, 'fiora_reset');
+                                                break;
+                                        }
+
+                                        // Default: jalankan AI seperti biasa
                                         const { runFiora } = await import('./fiora.js');
-                                        const inputText = (query || text || '').trim() || (m.isQuoted ? (m.quoted?.text || '').trim() : '');
+                                        const inputText = inputRaw || (m.isQuoted ? (m.quoted?.text || '').trim() : '');
                                         if (!inputText && !m.isQuoted) {
-                                                await tolak(hisoka, m, `❓ Masukkan pertanyaan atau perintah!\n\nContoh:\n${m.prefix || '.'}fiora apa itu AI`);
+                                                await tolak(hisoka, m, `❓ Masukkan pertanyaan atau perintah!\n\nContoh:\n${m.prefix || '.'}fiora apa itu AI\n\nLihat ${m.prefix || '.'}fiora status untuk daftar fitur.`);
                                                 break;
                                         }
                                         let groupMetadata = null;
