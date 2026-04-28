@@ -42,7 +42,6 @@ import { isAntiTagSWEnabled, toggleAntiTagSW, resetWarnings, getWarnings } from 
 import { injectMessage } from '../helper/inject.js';
 import listenEvent from './event.js';
 import gemini from '../helper/gemini.js';
-import { runFiora } from '../helper/fiora.js';
 import { updateUserName, getUserName } from '../db/userDb.js';
 import { loadUserMemory, detectAndUpdateMemory, clearUserMemory, memoryToReadable } from '../helper/userMemory.js';
 import { searchAndGetImage, searchAndGetImages, extractImagesFromText } from '../helper/imageSearch.js';
@@ -5168,32 +5167,651 @@ text += `╰══════════════════════�
                                 break;
                         }
 
-				case 'wily':
-				case 'ai':
-				case 'tanya': {
-					try {
-						const wilyAIConfig = loadConfig().wilyAI || {};
-						if (wilyAIConfig.enabled === false) return;
-						let groupMetadata = null;
-						if (m.isGroup) {
-							try { groupMetadata = await hisoka.groupMetadata(m.from); } catch (_) {}
-						}
-						const input = (query || '').trim() || (m.isQuoted ? (m.quoted?.text || m.quoted?.body || '') : '');
-						await runFiora(hisoka, m, input, { groupMetadata });
-						logCommand(m, hisoka, 'wily');
-					} catch (error) {
-						console.error('\x1b[31m[WilyAI/Fiora]\x1b[0m', error.message);
-						try { await hisoka.sendMessage(m.from, { react: { text: '❌', key: m.key } }); } catch (_) {}
-						const msg = error.message || '';
-						let userMsg;
-						if (/TOO_MANY_ATTEMPTS|rate.?limit|429/i.test(msg)) userMsg = '⏳ *Server AI lagi sibuk banget*\n\nLagi banyak yg pake, coba lagi 1-2 menit ya.';
-						else if (/timeout|ETIMEDOUT|ECONNRESET|ENETUNREACH/i.test(msg)) userMsg = '🌐 *Koneksi ke AI putus*\n\nSinyal lagi naik turun, coba ulang dikit lagi ya.';
-						else if (/Auth|Signup|idToken/i.test(msg)) userMsg = '🔐 *Auth AI lagi bermasalah*\n\nLagi diperbaiki otomatis, sabar bentar ya kak.';
-						else userMsg = '❌ *AI gagal jawab*\n\n_' + msg.slice(0, 120) + '_';
-						try { await m.reply(userMsg); } catch (_) {}
-					}
-					break;
-				}
+                        case 'wily':
+                        case 'ai':
+                        case 'tanya': {
+                                try {
+                                        const wilyAIConfig = loadConfig().wilyAI || {};
+                                        if (wilyAIConfig.enabled === false) return;
+
+                                        const userName = getUserName(m.sender, m.pushName || 'Kak');
+                                        const now = new Date();
+                                        const hours = parseInt(now.toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: 'Asia/Jakarta' }));
+                                        const timeOfDay = hours < 5 ? 'dini hari' : hours < 11 ? 'pagi' : hours < 15 ? 'siang' : hours < 18 ? 'sore' : 'malam';
+                                        const currentTime = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+                                        const currentDate = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+
+                                        // Reset history command
+                                        const lowerQuery = (query || '').trim().toLowerCase();
+                                        if (lowerQuery === 'reset' || lowerQuery === 'clear' || lowerQuery === 'hapus chat' || lowerQuery === 'mulai baru') {
+                                                const sessKey = getSessionKey(m);
+                                                clearHistory(sessKey);
+                                                await hisoka.sendMessage(m.from, { react: { text: '🗑️', key: m.key } });
+                                                await tolak(hisoka, m, `🗑️ Memory percakapan dihapus ${userName}! Kita mulai dari awal ya 😊`);
+                                                logCommand(m, hisoka, 'wily');
+                                                break;
+                                        }
+
+                                        // Deteksi media: gambar, sticker, video, dokumen (dari pesan saat ini atau reply)
+                                        let imageBuffer = null;
+                                        let imageMime = 'image/jpeg';
+                                        let hasMedia = false;
+                                        let mediaLabel = '';
+                                        let isDocumentMode = false;
+                                        let documentContext = '';
+                                        let quotedTextContext = '';
+
+                                        const curType = getMediaTypeFromMessage(m);
+                                        const qtType = m.isQuoted ? getMediaTypeFromMessage(m.quoted) : '';
+
+                                        // Helper: download media dari quoted message
+                                        const downloadQuotedMedia = async () => await getQuotedMediaBuffer(hisoka, m);
+
+                                        // ── DETEKSI MEDIA DARI PESAN LANGSUNG ──
+                                        if ((curType === 'imageMessage' || curType === 'stickerMessage') && m.isMedia) {
+                                                try {
+                                                        await hisoka.sendMessage(m.from, { react: { text: '🔍', key: m.key } });
+                                                        imageBuffer = await m.downloadMedia();
+                                                        if (imageBuffer && imageBuffer.length > 0) {
+                                                                imageMime = curType === 'stickerMessage' ? 'image/webp' : 'image/jpeg';
+                                                                hasMedia = true;
+                                                                mediaLabel = curType === 'stickerMessage' ? 'sticker' : 'gambar';
+                                                                wilyLog(`\x1b[36m[WilyAI]\x1b[39m Media dari pesan: ${curType}, ${imageBuffer.length} bytes`);
+                                                        }
+                                                } catch (dlErr) {
+                                                        wilyError(`\x1b[31m[WilyAI]\x1b[39m Gagal download media: ${dlErr.message}`);
+                                                }
+                                        } else if (curType === 'videoMessage' && m.isMedia) {
+                                                try {
+                                                        await hisoka.sendMessage(m.from, { react: { text: '🎬', key: m.key } });
+                                                        imageBuffer = await m.downloadMedia();
+                                                        if (imageBuffer && imageBuffer.length > 0) {
+                                                                imageMime = 'video/mp4';
+                                                                hasMedia = true;
+                                                                mediaLabel = 'video';
+                                                                wilyLog(`\x1b[36m[WilyAI]\x1b[39m Video dari pesan: ${imageBuffer.length} bytes`);
+                                                        }
+                                                } catch (dlErr) {
+                                                        wilyError(`\x1b[31m[WilyAI]\x1b[39m Gagal download video: ${dlErr.message}`);
+                                                }
+                                        } else if (curType === 'documentMessage' && m.isMedia) {
+                                                await hisoka.sendMessage(m.from, { react: { text: '📄', key: m.key } });
+                                                try {
+                                                        const docBuffer = await m.downloadMedia();
+                                                        // Baca semua path yang mungkin untuk mime & filename
+                                                        const docMime = (
+                                                                m.msg?.mimetype ||
+                                                                m.message?.documentMessage?.mimetype ||
+                                                                m.content?.mimetype ||
+                                                                ''
+                                                        ).toLowerCase();
+                                                        const docFileName = (
+                                                                m.msg?.fileName ||
+                                                                m.message?.documentMessage?.fileName ||
+                                                                m.content?.fileName ||
+                                                                ''
+                                                        ).toLowerCase();
+                                                        const docExt = docFileName.split('.').pop() || '';
+                                                        const docSizeKB = docBuffer ? (docBuffer.length / 1024).toFixed(1) : 0;
+                                                        wilyLog(`\x1b[36m[WilyAI]\x1b[39m Dokumen: mime="${docMime}" name="${docFileName}" ext="${docExt}" size=${docSizeKB}KB`);
+
+                                                        // Deteksi tipe file dari MAGIC BYTES (paling akurat, tidak bergantung mime/nama)
+                                                        const isZipMagic = docBuffer && docBuffer.length >= 4 &&
+                                                                docBuffer[0] === 0x50 && docBuffer[1] === 0x4B &&
+                                                                (docBuffer[2] === 0x03 || docBuffer[2] === 0x05 || docBuffer[2] === 0x07);
+                                                        const isPdfMagic = docBuffer && docBuffer.length >= 4 &&
+                                                                docBuffer[0] === 0x25 && docBuffer[1] === 0x50 &&
+                                                                docBuffer[2] === 0x44 && docBuffer[3] === 0x46;
+                                                        const isRarMagic = docBuffer && docBuffer.length >= 7 &&
+                                                                docBuffer[0] === 0x52 && docBuffer[1] === 0x61 &&
+                                                                docBuffer[2] === 0x72 && docBuffer[3] === 0x21;
+                                                        const is7zMagic = docBuffer && docBuffer.length >= 6 &&
+                                                                docBuffer[0] === 0x37 && docBuffer[1] === 0x7A &&
+                                                                docBuffer[2] === 0xBC && docBuffer[3] === 0xAF;
+
+                                                        // Deteksi via mime/ekstensi sebagai fallback (magic bytes sudah lebih dulu dicek)
+                                                        const isZip = isZipMagic || docMime.includes('zip') ||
+                                                                ['zip', 'apk', 'jar', 'docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp'].includes(docExt);
+                                                        const isPdf = isPdfMagic || docMime.includes('pdf') || docExt === 'pdf';
+                                                        const isRar = isRarMagic || docMime.includes('rar') || docExt === 'rar';
+                                                        const is7z = is7zMagic || docExt === '7z' || docMime.includes('7z');
+                                                        const isText = docMime.startsWith('text/') ||
+                                                                ['txt', 'csv', 'json', 'xml', 'html', 'htm', 'js', 'ts', 'py', 'java', 'cpp', 'c', 'css', 'md', 'yaml', 'yml', 'ini', 'conf', 'log', 'sh', 'bat'].includes(docExt);
+                                                        const isImage = docMime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(docExt);
+
+                                                        if (isZip && !isRar && !is7z) {
+                                                                // ── ZIP / DOCX / APK / JAR ──
+                                                                const zipResult = parseZipBuffer(docBuffer);
+                                                                if (zipResult.error) {
+                                                                        await tolak(hisoka, m, `❌ ${zipResult.error}`);
+                                                                        break;
+                                                                }
+                                                                const isDocxLike = ['docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp'].includes(docExt);
+                                                                const isApk = docExt === 'apk';
+                                                                const archiveLabel = isApk ? '📱 FILE APK' : isDocxLike ? `📝 FILE ${docExt.toUpperCase()}` : '📦 FILE ZIP';
+                                                                const passwordNote = zipResult.isPasswordProtected
+                                                                        ? `🔐 *Status:* *BERPASSWORD* (terenkripsi)`
+                                                                        : `🔓 *Status:* *Tidak berpassword*`;
+                                                                let zipText = `╭═══『 *${archiveLabel}* 』═══╮\n│\n`;
+                                                                zipText += `│ 📁 *Total File:* ${zipResult.files.length} file\n`;
+                                                                zipText += `│ ${passwordNote}\n│\n`;
+                                                                if (!isDocxLike) {
+                                                                        zipText += `│ *DAFTAR ISI:*\n`;
+                                                                        const displayFiles = zipResult.files.slice(0, 30);
+                                                                        for (const f of displayFiles) {
+                                                                                const lockIcon = f.encrypted ? '🔐' : '📄';
+                                                                                const sizeStr = f.size >= 1024 ? `${(f.size / 1024).toFixed(1)} MB` : `${f.size} KB`;
+                                                                                zipText += `│ ${lockIcon} ${f.name} _(${sizeStr})_\n`;
+                                                                        }
+                                                                        if (zipResult.files.length > 30) {
+                                                                                zipText += `│ _(... dan ${zipResult.files.length - 30} file lainnya)_\n`;
+                                                                        }
+                                                                } else {
+                                                                        // Untuk DOCX/XLSX dll, tunjukkan saja ringkasan
+                                                                        zipText += `│ _(Format Office — gunakan .wily untuk baca isinya lebih lanjut)_\n`;
+                                                                }
+                                                                zipText += `│\n╰═══════════════════════╯`;
+                                                                await hisoka.sendMessage(m.from, { react: { text: '✅', key: m.key } });
+                                                                await tolak(hisoka, m, zipText);
+                                                                logCommand(m, hisoka, 'wily');
+                                                                break;
+                                                        } else if (isRar) {
+                                                                // ── RAR FILE ──
+                                                                await hisoka.sendMessage(m.from, { react: { text: '✅', key: m.key } });
+                                                                await tolak(hisoka, m, `╭═══『 *📦 FILE RAR* 』═══╮\n│\n│ ⚠️ Format RAR terdeteksi!\n│\n│ RAR adalah format arsip yang bisa\n│ berpassword atau tidak.\n│\n│ *Catatan:* Format RAR tidak bisa\n│ dibaca isinya langsung oleh bot.\n│ Coba extract dulu atau kirim\n│ sebagai file ZIP.\n│\n╰═══════════════════════╯`);
+                                                                logCommand(m, hisoka, 'wily');
+                                                                break;
+                                                        } else if (is7z) {
+                                                                // ── 7Z FILE ──
+                                                                await hisoka.sendMessage(m.from, { react: { text: '✅', key: m.key } });
+                                                                await tolak(hisoka, m, `╭═══『 *📦 FILE 7Z* 』═══╮\n│\n│ ⚠️ Format 7-Zip terdeteksi!\n│\n│ Format 7Z tidak bisa dibaca\n│ isinya langsung oleh bot.\n│ Coba kirim sebagai ZIP.\n│\n╰═══════════════════════╯`);
+                                                                logCommand(m, hisoka, 'wily');
+                                                                break;
+                                                        } else if (isPdf) {
+                                                                // ── PDF FILE ──
+                                                                await tolak(hisoka, m, `📄 Sedang membaca isi PDF...`);
+                                                                try {
+                                                                        const pdfText = await extractPdfText(docBuffer);
+                                                                        if (!pdfText || pdfText.length < 10) {
+                                                                                await hisoka.sendMessage(m.from, { react: { text: '❌', key: m.key } });
+                                                                                await tolak(hisoka, m, `❌ PDF ini tidak mengandung teks yang bisa dibaca (mungkin berupa scan/gambar). Coba kirim sebagai gambar untuk dianalisis.`);
+                                                                                break;
+                                                                        }
+                                                                        isDocumentMode = true;
+                                                                        documentContext = `[ISI PDF]\n${pdfText}`;
+                                                                        hasMedia = true;
+                                                                        mediaLabel = 'PDF';
+                                                                        wilyLog(`\x1b[36m[WilyAI]\x1b[39m PDF dibaca: ${pdfText.length} karakter`);
+                                                                } catch (pdfErr) {
+                                                                        await hisoka.sendMessage(m.from, { react: { text: '❌', key: m.key } });
+                                                                        await tolak(hisoka, m, `❌ Gagal baca PDF: ${pdfErr.message}`);
+                                                                        break;
+                                                                }
+                                                        } else if (isText) {
+                                                                // ── TEKS / CODE / CSV / JSON / dll ──
+                                                                const textContent = docBuffer.toString('utf8').substring(0, 5000);
+                                                                isDocumentMode = true;
+                                                                documentContext = `[ISI FILE ${docExt.toUpperCase() || 'TEKS'}]\n${textContent}`;
+                                                                hasMedia = true;
+                                                                mediaLabel = `file ${docExt || 'teks'}`;
+                                                                wilyLog(`\x1b[36m[WilyAI]\x1b[39m File teks dibaca: ${textContent.length} karakter`);
+                                                        } else if (isImage) {
+                                                                // ── GAMBAR YANG DIKIRIM SEBAGAI DOKUMEN ──
+                                                                imageBuffer = docBuffer;
+                                                                imageMime = docMime || 'image/jpeg';
+                                                                hasMedia = true;
+                                                                mediaLabel = 'gambar';
+                                                        } else {
+                                                                // ── FILE TIDAK DIKENAL — Beri info ke AI ──
+                                                                isDocumentMode = true;
+                                                                documentContext = `[INFO FILE]\nNama: ${docFileName || 'tidak diketahui'}\nEkstensi: ${docExt || 'tidak ada'}\nUkuran: ${docSizeKB} KB\nMIME Type: ${docMime || 'tidak diketahui'}`;
+                                                                hasMedia = true;
+                                                                mediaLabel = `file ${docExt || 'tidak dikenal'}`;
+                                                                wilyLog(`\x1b[36m[WilyAI]\x1b[39m File tidak dikenal — metadata diteruskan ke AI`);
+                                                        }
+                                                } catch (docErr) {
+                                                        wilyError(`\x1b[31m[WilyAI]\x1b[39m Gagal proses dokumen: ${docErr.message}`);
+                                                        await hisoka.sendMessage(m.from, { react: { text: '❌', key: m.key } });
+                                                        await tolak(hisoka, m, `❌ Gagal proses file: ${docErr.message}`);
+                                                        break;
+                                                }
+                                        }
+
+                                        // ── DETEKSI MEDIA DARI PESAN YANG DI-REPLY ──
+                                        if (!hasMedia && m.isQuoted) {
+                                                if (qtType === 'imageMessage' || qtType === 'stickerMessage' || qtType === 'albumMessage') {
+                                                        try {
+                                                                await hisoka.sendMessage(m.from, { react: { text: '🔍', key: m.key } });
+                                                                const cached = getCachedQuotedMedia(hisoka, m);
+                                                                imageBuffer = await downloadQuotedMedia();
+                                                                if (imageBuffer && imageBuffer.length > 0) {
+                                                                        const info = getMediaInfo(qtType, m.quoted, cached);
+                                                                        imageMime = info.mime;
+                                                                        hasMedia = true;
+                                                                        mediaLabel = info.label;
+                                                                        wilyLog(`\x1b[36m[WilyAI]\x1b[39m Media dari quoted: ${qtType}, ${imageBuffer.length} bytes`);
+                                                                }
+                                                        } catch (dlErr) {
+                                                                wilyError(`\x1b[31m[WilyAI]\x1b[39m Gagal download quoted media: ${dlErr.message}`);
+                                                        }
+                                                } else if (qtType === 'videoMessage') {
+                                                        try {
+                                                                await hisoka.sendMessage(m.from, { react: { text: '🎬', key: m.key } });
+                                                                imageBuffer = await downloadQuotedMedia();
+                                                                if (imageBuffer && imageBuffer.length > 0) {
+                                                                        imageMime = 'video/mp4';
+                                                                        hasMedia = true;
+                                                                        mediaLabel = 'video';
+                                                                        wilyLog(`\x1b[36m[WilyAI]\x1b[39m Video dari quoted: ${imageBuffer.length} bytes`);
+                                                                }
+                                                        } catch (dlErr) {
+                                                                wilyError(`\x1b[31m[WilyAI]\x1b[39m Gagal download quoted video: ${dlErr.message}`);
+                                                        }
+                                                } else if (qtType === 'documentMessage') {
+                                                        await hisoka.sendMessage(m.from, { react: { text: '📄', key: m.key } });
+                                                        try {
+                                                                const docBuffer = await downloadQuotedMedia();
+                                                                const qtMime = (
+                                                                        m.quoted?.msg?.mimetype ||
+                                                                        m.quoted?.message?.documentMessage?.mimetype ||
+                                                                        m.quoted?.content?.mimetype || ''
+                                                                ).toLowerCase();
+                                                                const qtFileName = (
+                                                                        m.quoted?.msg?.fileName ||
+                                                                        m.quoted?.message?.documentMessage?.fileName ||
+                                                                        m.quoted?.content?.fileName || ''
+                                                                ).toLowerCase();
+                                                                const qtExt = qtFileName.split('.').pop() || '';
+                                                                const qtSizeKB = docBuffer ? (docBuffer.length / 1024).toFixed(1) : 0;
+                                                                wilyLog(`\x1b[36m[WilyAI]\x1b[39m Quoted doc: mime="${qtMime}" name="${qtFileName}" size=${qtSizeKB}KB`);
+
+                                                                // Magic bytes detection
+                                                                const qtIsZip = docBuffer && docBuffer.length >= 4 &&
+                                                                        docBuffer[0] === 0x50 && docBuffer[1] === 0x4B &&
+                                                                        (docBuffer[2] === 0x03 || docBuffer[2] === 0x05 || docBuffer[2] === 0x07);
+                                                                const qtIsPdf = docBuffer && docBuffer.length >= 4 &&
+                                                                        docBuffer[0] === 0x25 && docBuffer[1] === 0x50 &&
+                                                                        docBuffer[2] === 0x44 && docBuffer[3] === 0x46;
+                                                                const qtIsRar = docBuffer && docBuffer.length >= 4 &&
+                                                                        docBuffer[0] === 0x52 && docBuffer[1] === 0x61 &&
+                                                                        docBuffer[2] === 0x72 && docBuffer[3] === 0x21;
+                                                                const qtIs7z = docBuffer && docBuffer.length >= 6 &&
+                                                                        docBuffer[0] === 0x37 && docBuffer[1] === 0x7A &&
+                                                                        docBuffer[2] === 0xBC && docBuffer[3] === 0xAF;
+
+                                                                const isZip = qtIsZip || qtMime.includes('zip') ||
+                                                                        ['zip', 'apk', 'jar', 'docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp'].includes(qtExt);
+                                                                const isPdf = qtIsPdf || qtMime.includes('pdf') || qtExt === 'pdf';
+                                                                const isRar = qtIsRar || qtMime.includes('rar') || qtExt === 'rar';
+                                                                const is7z = qtIs7z || qtExt === '7z';
+                                                                const isText = qtMime.startsWith('text/') ||
+                                                                        ['txt', 'csv', 'json', 'xml', 'html', 'htm', 'js', 'ts', 'py', 'java', 'cpp', 'c', 'css', 'md', 'yaml', 'yml', 'ini', 'conf', 'log', 'sh', 'bat'].includes(qtExt);
+
+                                                                if (isZip && !isRar && !is7z) {
+                                                                        const zipResult = parseZipBuffer(docBuffer);
+                                                                        if (zipResult.error) {
+                                                                                await tolak(hisoka, m, `❌ ${zipResult.error}`);
+                                                                                break;
+                                                                        }
+                                                                        const isDocxLike = ['docx', 'xlsx', 'pptx', 'odt'].includes(qtExt);
+                                                                        const archiveLabel = qtExt === 'apk' ? '📱 FILE APK' : isDocxLike ? `📝 FILE ${qtExt.toUpperCase()}` : '📦 FILE ZIP';
+                                                                        const passwordNote = zipResult.isPasswordProtected ? `🔐 *BERPASSWORD*` : `🔓 *Tidak berpassword*`;
+                                                                        let zipText = `╭═══『 *${archiveLabel}* 』═══╮\n│\n│ 📁 *Total File:* ${zipResult.files.length}\n│ ${passwordNote}\n│\n│ *DAFTAR ISI:*\n`;
+                                                                        for (const f of zipResult.files.slice(0, 30)) {
+                                                                                const lockIcon = f.encrypted ? '🔐' : '📄';
+                                                                                const sizeStr = f.size >= 1024 ? `${(f.size / 1024).toFixed(1)} MB` : `${f.size} KB`;
+                                                                                zipText += `│ ${lockIcon} ${f.name} _(${sizeStr})_\n`;
+                                                                        }
+                                                                        if (zipResult.files.length > 30) zipText += `│ _(... dan ${zipResult.files.length - 30} lainnya)_\n`;
+                                                                        zipText += `│\n╰═══════════════════════╯`;
+                                                                        await hisoka.sendMessage(m.from, { react: { text: '✅', key: m.key } });
+                                                                        await tolak(hisoka, m, zipText);
+                                                                        logCommand(m, hisoka, 'wily');
+                                                                        break;
+                                                                } else if (isRar) {
+                                                                        await hisoka.sendMessage(m.from, { react: { text: '✅', key: m.key } });
+                                                                        await tolak(hisoka, m, `📦 *File RAR terdeteksi.*\nBot tidak bisa baca isi RAR langsung. Coba extract dulu atau kirim sebagai ZIP.`);
+                                                                        logCommand(m, hisoka, 'wily');
+                                                                        break;
+                                                                } else if (is7z) {
+                                                                        await hisoka.sendMessage(m.from, { react: { text: '✅', key: m.key } });
+                                                                        await tolak(hisoka, m, `📦 *File 7Z terdeteksi.*\nBot tidak bisa baca isi 7Z. Coba kirim sebagai ZIP.`);
+                                                                        logCommand(m, hisoka, 'wily');
+                                                                        break;
+                                                                } else if (isPdf) {
+                                                                        await tolak(hisoka, m, `📄 Sedang membaca PDF...`);
+                                                                        const pdfText = await extractPdfText(docBuffer);
+                                                                        if (!pdfText || pdfText.length < 10) {
+                                                                                await tolak(hisoka, m, `❌ PDF tidak mengandung teks yang bisa dibaca.`);
+                                                                                break;
+                                                                        }
+                                                                        isDocumentMode = true;
+                                                                        documentContext = `[ISI PDF]\n${pdfText}`;
+                                                                        hasMedia = true;
+                                                                        mediaLabel = 'PDF';
+                                                                } else if (isText) {
+                                                                        const textContent = docBuffer.toString('utf8').substring(0, 5000);
+                                                                        isDocumentMode = true;
+                                                                        documentContext = `[ISI FILE ${qtExt.toUpperCase() || 'TEKS'}]\n${textContent}`;
+                                                                        hasMedia = true;
+                                                                        mediaLabel = `file ${qtExt || 'teks'}`;
+                                                                } else {
+                                                                        isDocumentMode = true;
+                                                                        documentContext = `[INFO FILE]\nNama: ${qtFileName || 'tidak diketahui'}\nEkstensi: ${qtExt || 'tidak ada'}\nUkuran: ${qtSizeKB} KB\nMIME Type: ${qtMime || 'tidak diketahui'}`;
+                                                                        hasMedia = true;
+                                                                        mediaLabel = `file ${qtExt || 'tidak dikenal'}`;
+                                                                }
+                                                        } catch (docErr) {
+                                                                await hisoka.sendMessage(m.from, { react: { text: '❌', key: m.key } });
+                                                                await tolak(hisoka, m, `❌ Gagal proses file: ${docErr.message}`);
+                                                                break;
+                                                        }
+                                                } else if (qtType === 'conversation' || qtType === 'extendedTextMessage') {
+                                                        // Reply ke pesan teks orang lain — beri konteks pengirim + isi pesan
+                                                        const senderName = m.quoted?.pushName || m.quoted?.key?.participant?.split('@')[0] || 'seseorang';
+                                                        const quotedText = m.quoted?.text || m.quoted?.body || '';
+                                                        if (quotedText) {
+                                                                quotedTextContext = `\n📩 KONTEKS PESAN YANG DI-REPLY:\nPengirim: ${senderName}\nIsi pesan: "${quotedText.substring(0, 500)}"`;
+                                                        }
+                                                }
+                                        }
+
+                                        let userQuestion = query?.trim() || '';
+
+                                        if (!userQuestion && !hasMedia && !quotedTextContext) {
+                                                let helpText = `╭═══『 *🤖 WILY AI* 』═══╮\n`;
+                                                helpText += `│\n`;
+                                                helpText += `│ Halo ${userName}! Aku Wily Bot AI 🤖\n`;
+                                                helpText += `│ AI cerdas berbasis Gemini Vision\n`;
+                                                helpText += `│\n`;
+                                                helpText += `│ *CARA PAKAI:*\n`;
+                                                helpText += `│\n`;
+                                                helpText += `│ 💬 *Tanya sesuatu:*\n`;
+                                                helpText += `│ .wily [pertanyaan kamu]\n`;
+                                                helpText += `│\n`;
+                                                helpText += `│ 🖼️ *Analisis gambar/sticker:*\n`;
+                                                helpText += `│ Kirim/reply gambar + .wily\n`;
+                                                helpText += `│\n`;
+                                                helpText += `│ 🎬 *Analisis video:*\n`;
+                                                helpText += `│ Kirim/reply video + .wily\n`;
+                                                helpText += `│\n`;
+                                                helpText += `│ 📄 *Baca PDF:*\n`;
+                                                helpText += `│ Kirim/reply PDF + .wily [pertanyaan]\n`;
+                                                helpText += `│\n`;
+                                                helpText += `│ 📦 *Cek isi ZIP:*\n`;
+                                                helpText += `│ Kirim/reply file ZIP + .wily\n`;
+                                                helpText += `│\n`;
+                                                helpText += `│ 🔍 *Cari & kirim gambar:*\n`;
+                                                helpText += `│ .wily cari gambar naruto\n`;
+                                                helpText += `│\n`;
+                                                helpText += `│ 💬 *Reply pesan + tanya:*\n`;
+                                                helpText += `│ Reply pesan siapapun + .wily [pertanyaan]\n`;
+                                                helpText += `│\n`;
+                                                helpText += `│ 🧠 *Memory percakapan:*\n`;
+                                                helpText += `│ • Private: langsung lanjut otomatis\n`;
+                                                helpText += `│ • Grup: reply pesan bot untuk lanjut\n`;
+                                                helpText += `│ • .wily reset - hapus memory\n`;
+                                                helpText += `│\n`;
+                                                helpText += `│ *KEMAMPUAN AI:*\n`;
+                                                helpText += `│ ✅ Ingat percakapan sebelumnya\n`;
+                                                helpText += `│ ✅ Cari dan kirim gambar otomatis\n`;
+                                                helpText += `│ ✅ Baca teks di dalam gambar\n`;
+                                                helpText += `│ ✅ Tahu judul anime/film/series\n`;
+                                                helpText += `│ ✅ Kenali karakter/artis dari foto\n`;
+                                                helpText += `│ ✅ Baca isi file PDF\n`;
+                                                helpText += `│ ✅ Cek isi file ZIP + deteksi password\n`;
+                                                helpText += `│ ✅ Analisis video\n`;
+                                                helpText += `│ ✅ Jawab pertanyaan umum\n`;
+                                                helpText += `│\n`;
+                                                helpText += `╰══════════════════════╯`;
+                                                await tolak(hisoka, m, helpText);
+                                                break;
+                                        }
+
+                                        const hasSticker = hasMedia && mediaLabel === 'sticker';
+
+                                        if (!userQuestion && hasMedia) {
+                                                userQuestion = buildWilyMediaUserPrompt({
+                                                        mediaLabel,
+                                                        hasSticker,
+                                                        isDocumentMode,
+                                                        mode: 'command',
+                                                });
+                                        }
+                                        if (!userQuestion && quotedTextContext) {
+                                                userQuestion = `Bantu aku tentang pesan ini.`;
+                                        }
+
+                                        // ── SESSION KEY & HISTORY (harus sebelum imgSearch maupun Gemini) ──
+                                        const sessKey = getSessionKey(m);
+                                        const isReplyToBot = m.isQuoted && m.quoted?.key?.fromMe;
+                                        const useHistory = !m.isGroup || isReplyToBot;
+
+                                        // ── DETEKSI PERMINTAAN CARI GAMBAR ──
+                                        const imgSearchQuery = !hasMedia ? detectImageSearchQuery(userQuestion) : null;
+
+                                        if (imgSearchQuery) {
+                                                // Ekstrak jumlah gambar yang diminta (max 5)
+                                                const imgCount = Math.min(extractImageCount(userQuestion), 5);
+                                                await hisoka.sendMessage(m.from, { react: { text: '🔍', key: m.key } });
+                                                await tolak(hisoka, m, await buildSmartImageWaitText({
+                                                        userName,
+                                                        userQuestion,
+                                                        query: imgSearchQuery,
+                                                        count: imgCount,
+                                                }));
+                                                let imgBotReply = '';
+                                                try {
+                                                        const imgResults = await searchAndGetImages(imgSearchQuery, imgCount);
+                                                        let captions = [];
+                                                        if (imgResults.length > 1) {
+                                                                captions = await buildSmartAlbumCaptions({
+                                                                        userQuestion,
+                                                                        query: imgSearchQuery,
+                                                                        images: imgResults,
+                                                                });
+                                                                await sendImageAlbum(hisoka, m, imgResults, captions);
+                                                        } else {
+                                                                const r = imgResults[0];
+                                                                captions = await buildSmartAlbumCaptions({
+                                                                        userQuestion,
+                                                                        query: imgSearchQuery,
+                                                                        images: imgResults,
+                                                                });
+                                                                const sentImage = await hisoka.sendMessage(m.from, {
+                                                                        image: r.buffer,
+                                                                        caption: captions[0] || `🖼️ *${r.title || imgSearchQuery}*`
+                                                                }, { quoted: m });
+                                                                rememberAIMedia(hisoka, sentImage, [{
+                                                                        buffer: r.buffer,
+                                                                        mime: 'image/jpeg',
+                                                                        label: 'gambar',
+                                                                        caption: captions[0] || r.title || imgSearchQuery,
+                                                                }]);
+                                                        }
+                                                        await hisoka.sendMessage(m.from, { react: { text: '✅', key: m.key } });
+                                                        wilyLog(`\x1b[36m[WilyAI]\x1b[39m Image search: "${imgSearchQuery}" → ${imgResults.length} gambar`);
+                                                        imgBotReply = await buildSmartImageHistoryReply({
+                                                                userQuestion,
+                                                                query: imgSearchQuery,
+                                                                images: imgResults,
+                                                                captions,
+                                                        });
+                                                } catch (searchErr) {
+                                                        wilyError(`\x1b[31m[WilyAI]\x1b[39m Image search error: ${searchErr.message}`);
+                                                        await hisoka.sendMessage(m.from, { react: { text: '❌', key: m.key } });
+                                                        imgBotReply = `Maaf aku gagal cariin gambar "${imgSearchQuery}" tadi. Coba minta lagi dengan kata kunci yang lebih spesifik ya!`;
+                                                        await tolak(hisoka, m, `❌ Maaf ${userName}, gagal cariin gambar "${imgSearchQuery}".\n\nCoba kata kunci yang lebih spesifik ya!`);
+                                                }
+                                                if (useHistory && imgBotReply) {
+                                                        addToHistory(sessKey, userQuestion, imgBotReply, buildHistoryMeta(m, { mediaLabel: 'gambar' }));
+                                                }
+                                                logCommand(m, hisoka, 'wily');
+                                                break;
+                                        }
+
+                                        // ── MEMORY PERCAKAPAN ──
+                                        const historyMessages = useHistory ? getHistory(sessKey) : [];
+                                        const hasHistory = historyMessages.length > 0;
+
+                                        // Gabungkan konteks dokumen atau teks quoted ke chatContext
+                                        let extraContext = `CATATAN: Kalau user minta cari/kirim gambar, jawab secara natural bahwa gambar sedang dipilih dan akan dikirim oleh bot. Jangan pakai kalimat template yang sama berulang-ulang.`;
+                                        if (documentContext) extraContext += `\n\n${documentContext}`;
+                                        if (quotedTextContext) extraContext += `\n${quotedTextContext}`;
+
+                                        const stopTyping_cmd = startTyping(hisoka, m);
+                                        const aiCmdUserMemory = detectAndUpdateMemory(m.sender, userQuestion);
+                                        const systemPrompt = buildWilyAICommandPrompt({
+                                                userName, currentTime, currentDate, timeOfDay,
+                                                hasHistory,
+                                                chatContext: extraContext,
+                                                isPrivate: !m.isGroup,
+                                                isOwner: m.isOwner,
+                                                hasImage: hasMedia && !isDocumentMode,
+                                                isImageReply: false,
+                                                hasSticker,
+                                                isStickerReply: false,
+                                                userMessage: userQuestion,
+                                                isDocumentMode,
+                                                history: historyMessages,
+                                                userMemory: aiCmdUserMemory,
+                                        });
+
+                                        // Bangun final user message (gabung pertanyaan + konteks dokumen jika ada)
+                                        const finalUserMsg = isDocumentMode && documentContext
+                                                ? `${documentContext}\n\n${userQuestion}`
+                                                : quotedTextContext
+                                                ? `${quotedTextContext}\n\nPertanyaan user: ${userQuestion}`
+                                                : userQuestion;
+
+                                        // Bangun contents array untuk Gemini
+                                        let contents;
+                                        if (!hasHistory) {
+                                                // Percakapan baru: sistem prompt + pertanyaan sekarang
+                                                if (imageBuffer && imageBuffer.length > 0 && !isDocumentMode) {
+                                                        contents = null; // handled below via askWithImage
+                                                } else {
+                                                        contents = [{ role: 'user', parts: [{ text: systemPrompt + '\n\n' + finalUserMsg }] }];
+                                                }
+                                        } else {
+                                                // Lanjut percakapan: sistem prompt sebagai pembuka, lalu history, lalu pertanyaan sekarang
+                                                if (imageBuffer && imageBuffer.length > 0 && !isDocumentMode) {
+                                                        contents = null; // handled below, history passed separately
+                                                } else {
+                                                        const cmdMsgMeta = buildHistoryMeta(m, { mediaLabel: hasMedia ? mediaLabel : null });
+                                                        contents = [
+                                                                { role: 'user', parts: [{ text: systemPrompt }] },
+                                                                { role: 'model', parts: [{ text: `Halo ${userName}! Aku Wily Bot, siap membantu kamu 🤖` }] },
+                                                                ...historyMessages,
+                                                                { role: 'user', parts: [{ text: wrapCurrentUserMessage(finalUserMsg, cmdMsgMeta) }] },
+                                                        ];
+                                                }
+                                                wilyLog(`\x1b[36m[WilyAI]\x1b[39m Melanjutkan percakapan (${historyMessages.length / 2} pesan sebelumnya) untuk ${m.sender}`);
+                                        }
+
+                                        console.log(`\x1b[36m[WilyAI]\x1b[0m ← ${m.sender} | "${userQuestion.substring(0, 80)}${userQuestion.length > 80 ? '...' : ''}" | media: ${hasMedia ? mediaLabel : 'teks'} | history: ${historyMessages.length / 2 || 0} pesan`);
+
+                                        let response;
+
+                                        if (imageBuffer && imageBuffer.length > 0 && !isDocumentMode) {
+                                                wilyLog(`\x1b[36m[WilyAI]\x1b[39m Vision request - buffer: ${imageBuffer.length} bytes, mime: ${imageMime}`);
+                                                let finalBuffer = imageBuffer;
+                                                let finalMime = imageMime;
+                                                if (imageMime === 'image/webp') {
+                                                        try {
+                                                                const sharp = (await import('sharp')).default;
+                                                                finalBuffer = await sharp(imageBuffer).jpeg({ quality: 90 }).toBuffer();
+                                                                finalMime = 'image/jpeg';
+                                                                wilyLog(`\x1b[36m[WilyAI]\x1b[39m Sticker dikonversi ke JPEG: ${finalBuffer.length} bytes`);
+                                                        } catch (sharpErr) {
+                                                                wilyError(`\x1b[31m[WilyAI]\x1b[39m Gagal konversi sticker: ${sharpErr.message}`);
+                                                        }
+                                                }
+                                                // Untuk gambar/video, gabungkan history teks + pesan media terakhir
+                                                if (hasHistory) {
+                                                        const visionMsgMeta = buildHistoryMeta(m, { mediaLabel: hasMedia ? mediaLabel : 'gambar' });
+                                                        const visionContents = [
+                                                                { role: 'user', parts: [{ text: systemPrompt }] },
+                                                                { role: 'model', parts: [{ text: `Halo ${userName}! Aku Wily Bot, siap membantu kamu 🤖` }] },
+                                                                ...historyMessages,
+                                                                {
+                                                                        role: 'user',
+                                                                        parts: [
+                                                                                { inlineData: { mimeType: finalMime, data: finalBuffer.toString('base64') } },
+                                                                                { text: wrapCurrentUserMessage(finalUserMsg, visionMsgMeta) },
+                                                                        ],
+                                                                },
+                                                        ];
+                                                        const models = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-pro-latest'];
+                                                        let lastErr = null;
+                                                        for (const model of models) {
+                                                                try {
+                                                                        response = await gemini.chat({ model, contents: visionContents });
+                                                                        wilyLog(`\x1b[36m[Gemini Vision]\x1b[0m ✅ Berhasil dengan model: ${model}`);
+                                                                        break;
+                                                                } catch (err) {
+                                                                        wilyError(`\x1b[31m[Gemini Vision]\x1b[0m ❌ Model ${model} gagal: ${err.message}`);
+                                                                        lastErr = err;
+                                                                }
+                                                        }
+                                                        if (!response) throw lastErr || new Error('Semua model gagal');
+                                                } else {
+                                                        response = await gemini.askWithImage(systemPrompt + '\n\n' + finalUserMsg, finalBuffer, finalMime);
+                                                }
+                                        } else {
+                                                response = await gemini.chat({ contents });
+                                        }
+
+                                        if (response && response.trim()) {
+                                                // Kalau user sudah kirim media (foto/video/dokumen), hapus marker [GAMBAR:...] dari respons AI
+                                                // agar bot tidak salah kirim gambar baru padahal user cuma minta analisis/identifikasi
+                                                let finalResponse = response.trim();
+                                                if (hasMedia) {
+                                                        const stripped = finalResponse.replace(/\[GAMBAR:[^\]]{1,200}\]/gi, '').replace(/\n{3,}/g, '\n\n').trim();
+                                                        if (stripped !== finalResponse) {
+                                                                console.log(`\x1b[36m[WilyAI]\x1b[0m ⚠️ Marker [GAMBAR:] dihapus dari respons karena user sudah kirim media`);
+                                                        }
+                                                        finalResponse = stripped;
+                                                }
+                                                const wilyMediaResult = await processAIMediaAndSend(hisoka, m, finalResponse);
+                                                const wilyClean = wilyMediaResult.sentText;
+                                                const wc = wilyMediaResult.counts;
+                                                const mediaSummary = [
+                                                        wc.images ? `${wc.images} gambar` : null,
+                                                        wc.voiceNotes ? `${wc.voiceNotes} VN` : null,
+                                                        wc.songs ? `${wc.songs} lagu` : null,
+                                                        wc.videos ? `${wc.videos} video` : null,
+                                                ].filter(Boolean).join(' + ');
+                                                console.log(`\x1b[36m[WilyAI]\x1b[0m → balas ${finalResponse.length} karakter${mediaSummary ? ` + ${mediaSummary}` : ''} ke ${m.sender}`);
+                                                if (useHistory) {
+                                                        addToHistory(sessKey, userQuestion, wilyClean || response.trim(), buildHistoryMeta(m));
+                                                }
+                                        } else {
+                                                console.log(`\x1b[36m[WilyAI]\x1b[0m ⚠️ AI respons kosong untuk ${m.sender}`);
+                                                await hisoka.sendMessage(m.from, { react: { text: '❌', key: m.key } });
+                                                await tolak(hisoka, m, '❌ AI tidak merespons, coba lagi.');
+                                        }
+
+                                        logCommand(m, hisoka, 'wily');
+                                } catch (error) {
+                                        console.error(`\x1b[31m[WilyAI]\x1b[0m ❌ code: ${error.code || 'N/A'} | ${error.message}`);
+                                        wilyError('\x1b[31m[WilyAI] Error:\x1b[39m', error.message);
+                                        await hisoka.sendMessage(m.from, { react: { text: '❌', key: m.key } });
+                                        const msg = error.message || '';
+                                        let userMsg;
+                                        if (/TOO_MANY_ATTEMPTS|rate.?limit|429/i.test(msg)) {
+                                                userMsg = '⏳ *Server AI lagi sibuk banget*\n\nLagi banyak yg pake, coba lagi 1-2 menit ya.';
+                                        } else if (/timeout|ETIMEDOUT|ECONNRESET|ENETUNREACH/i.test(msg)) {
+                                                userMsg = '🌐 *Koneksi ke AI putus*\n\nSinyal lagi naik turun, coba ulang dikit lagi ya.';
+                                        } else if (/Auth|Signup|idToken/i.test(msg)) {
+                                                userMsg = '🔐 *Auth AI lagi bermasalah*\n\nLagi diperbaiki otomatis, sabar bentar ya kak.';
+                                        } else {
+                                                userMsg = `❌ *AI gagal jawab*\n\n_${msg.slice(0, 120)}_`;
+                                        }
+                                        await tolak(hisoka, m, userMsg);
+                                }
+                                break;
+                        }
 
                         case 'antidel':
                         case 'ad': {
