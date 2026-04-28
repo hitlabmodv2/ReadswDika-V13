@@ -148,11 +148,12 @@ class Gemini {
     }
 
     async _callOnce({ token, model, contents, config }) {
-        // Default lebih rendah biar nggak ngarang. Caller bisa override via config.
+        // Temperature 0.85 + topP 0.92 + topK 50 → variasi tinggi biar respons gak ke-template (anti-AI).
         const generationConfig = {
             maxOutputTokens: 2048,
-            temperature: 0.7,
-            topP: 0.9,
+            temperature: 0.85,
+            topP: 0.92,
+            topK: 50,
             ...config,
         };
         const { data } = await axios.post(
