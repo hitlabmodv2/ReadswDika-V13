@@ -45,7 +45,7 @@ import gemini from '../helper/gemini.js';
 import { updateUserName, getUserName } from '../db/userDb.js';
 import { loadUserMemory, detectAndUpdateMemory, clearUserMemory, memoryToReadable } from '../helper/userMemory.js';
 import { searchAndGetImage, searchAndGetImages, extractImagesFromText } from '../helper/imageSearch.js';
-import { extractVoiceNotesFromText, extractSongsFromText, extractVideosFromText, hasMediaDownloadMarker } from '../helper/aiTools.js';
+import { extractVoiceNotesFromText, extractSongsFromText, extractVideosFromText, extractStickersFromText, hasMediaDownloadMarker, hasStickerMarker } from '../helper/aiTools.js';
 import { getHistory, addToHistory, clearHistory, clearAllHistory, countHistory, getSessionKey, buildHistoryMeta, wrapCurrentUserMessage } from '../db/aiHistory.js';
 import { sendAIReply } from '../helper/aiReact.js';
 import { buildSmartAlbumCaptionPrompt, buildSmartImageHistoryPrompt, buildSmartImageWaitPrompt, buildWilyAICommandPrompt, buildWilyFallbackUserPrompt, buildWilyMediaUserPrompt, buildWilyVisionContextPrompt } from '../helper/aiPrompt.js';
@@ -699,19 +699,31 @@ async function ensureYtdlp(hisoka, m) {
  */
 async function processAIMediaAndSend(hisoka, m, response) {
     let working = String(response || '').trim();
-    if (!working) return { cleanText: '', sentText: null, counts: { images: 0, voiceNotes: 0, songs: 0, videos: 0 } };
+    if (!working) return { cleanText: '', sentText: null, counts: { images: 0, stickers: 0, voiceNotes: 0, songs: 0, videos: 0 } };
 
     // ── 1. GAMBAR (cepat, tanpa yt-dlp) ──
     const imgRes = await extractImagesFromText(working);
     working = imgRes.cleanText;
     const images = imgRes.images || [];
 
-    // ── 2. VN / TTS (cepat, tanpa yt-dlp) ──
+    // ── 2. STIKER (search img → webp) ──
+    let stickers = [];
+    if (hasStickerMarker(working)) {
+        try {
+            const stickerRes = await extractStickersFromText(working);
+            working = stickerRes.cleanText;
+            stickers = stickerRes.stickers || [];
+        } catch (e) {
+            wilyError(`[AIMedia] ❌ extractStickers gagal: ${e.message}`);
+        }
+    }
+
+    // ── 3. VN / TTS (cepat, tanpa yt-dlp) ──
     const vnRes = await extractVoiceNotesFromText(working);
     working = vnRes.cleanText;
     const voiceNotes = vnRes.voiceNotes || [];
 
-    // ── 3. LAGU + VIDEO (butuh yt-dlp, ensure dulu sekali) ──
+    // ── 4. LAGU + VIDEO (butuh yt-dlp, ensure dulu sekali) ──
     let songs = [];
     let videos = [];
     if (hasMediaDownloadMarker(working)) {
@@ -728,11 +740,16 @@ async function processAIMediaAndSend(hisoka, m, response) {
         }
     }
 
-    // ── 4. KIRIM SEMUA MEDIA ──
+    // ── 5. KIRIM SEMUA MEDIA ──
     for (const img of images) {
         try {
             await hisoka.sendMessage(m.from, { image: img.buffer, caption: '🖼️' }, { quoted: m });
         } catch (e) { wilyError(`[AIMedia] kirim gambar gagal: ${e.message}`); }
+    }
+    for (const stk of stickers) {
+        try {
+            await hisoka.sendMessage(m.from, { sticker: stk.buffer }, { quoted: m });
+        } catch (e) { wilyError(`[AIMedia] kirim sticker gagal: ${e.message}`); }
     }
     for (const vn of voiceNotes) {
         try {
@@ -772,15 +789,15 @@ async function processAIMediaAndSend(hisoka, m, response) {
         sentText = await sendAIReply(hisoka, m, finalText);
     }
 
-    const totalMedia = images.length + voiceNotes.length + songs.length + videos.length;
+    const totalMedia = images.length + stickers.length + voiceNotes.length + songs.length + videos.length;
     if (totalMedia > 0) {
-        wilyLog(`\x1b[36m[AIMedia]\x1b[39m sent → ${images.length} img + ${voiceNotes.length} vn + ${songs.length} lagu + ${videos.length} video`);
+        wilyLog(`\x1b[36m[AIMedia]\x1b[39m sent → ${images.length} img + ${stickers.length} stk + ${voiceNotes.length} vn + ${songs.length} lagu + ${videos.length} video`);
     }
 
     return {
         cleanText: finalText,
         sentText,
-        counts: { images: images.length, voiceNotes: voiceNotes.length, songs: songs.length, videos: videos.length },
+        counts: { images: images.length, stickers: stickers.length, voiceNotes: voiceNotes.length, songs: songs.length, videos: videos.length },
     };
 }
 

@@ -5,7 +5,11 @@
  *  marker di response, handler nge-extract & kirim media.
  *
  *  Marker yang didukung:
- *    [VN: teks yang diucapkan]   → voice note pakai Google TTS
+ *    [VN: teks]                  → voice note bahasa Indonesia
+ *    [VN-JP: teks]               → voice note bahasa Jepang (kawaii)
+ *    [VN-EN: teks]               → voice note bahasa Inggris
+ *    [VN-XX: teks]               → kode bahasa lain (es, fr, ko, zh, dll)
+ *    [STIKER: query]             → sticker WhatsApp (search img → webp)
  *    [LAGU: judul lagu]          → audio mp3 dari YouTube
  *    [VIDEO: judul video]        → video mp4 dari YouTube
  *
@@ -18,6 +22,7 @@ import fs from 'fs';
 import path from 'path';
 import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
+import { searchAndGetImage } from './imageSearch.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -273,34 +278,133 @@ export async function searchAndDownloadVideo(query, opts = {}) {
 //  EXTRACTORS  (parse marker dari response AI)
 // ════════════════════════════════════════════════════════════
 
+// Mapping kode marker → kode bahasa Google TTS.
+// Sengaja flexible: JP/JA → ja, EN/US/GB → en, ID → id, dst.
+const VN_LANG_MAP = {
+    'ID': 'id', 'IND': 'id', 'IN': 'id',
+    'JP': 'ja', 'JA': 'ja', 'JPN': 'ja',
+    'EN': 'en', 'US': 'en', 'GB': 'en', 'UK': 'en', 'ENG': 'en',
+    'KR': 'ko', 'KO': 'ko', 'KOR': 'ko',
+    'CN': 'zh-CN', 'ZH': 'zh-CN', 'CHN': 'zh-CN',
+    'TW': 'zh-TW',
+    'JV': 'jw', 'SU': 'su',
+    'AR': 'ar', 'ARB': 'ar',
+    'ES': 'es', 'FR': 'fr', 'DE': 'de', 'IT': 'it',
+    'PT': 'pt', 'NL': 'nl', 'RU': 'ru', 'TR': 'tr',
+    'TH': 'th', 'VI': 'vi', 'HI': 'hi',
+};
+
+function resolveVnLang(code) {
+    if (!code) return 'id';
+    const upper = String(code).toUpperCase().trim();
+    return VN_LANG_MAP[upper] || code.toLowerCase();
+}
+
 /**
- * Parse [VN: ...] dari response AI, generate voice note pakai Google TTS.
- * @returns {Promise<{cleanText: string, voiceNotes: Array<{buffer, text}>}>}
+ * Parse [VN: ...] / [VN-JP: ...] / [VN-EN: ...] dll dari response AI,
+ * generate voice note pakai Google TTS sesuai bahasa yang dipilih.
+ * @returns {Promise<{cleanText: string, voiceNotes: Array<{buffer, text, lang}>}>}
  */
 export async function extractVoiceNotesFromText(text) {
     const voiceNotes = [];
     let cleanText = String(text || '');
 
-    const regex = /\[VN:\s*([^\]]{1,500})\]/gi;
+    // Group 1: opsional kode bahasa setelah dash (JP, EN, KR, dll)
+    // Group 2: isi teks
+    const regex = /\[VN(?:-([A-Za-z]{2,4}))?:\s*([^\]]{1,500})\]/gi;
     const matches = [...cleanText.matchAll(regex)];
 
     for (const match of matches) {
         const fullMarker = match[0];
-        const vnText = match[1].trim();
+        const langCode = match[1];
+        const vnText = match[2].trim();
         cleanText = cleanText.split(fullMarker).join('');
 
         if (!vnText) continue;
+        const lang = resolveVnLang(langCode);
         try {
-            const buffer = await googleTTS(vnText, 'id');
-            voiceNotes.push({ buffer, text: vnText });
-            aiToolsLog(`[AITool/VN] ✅ "${vnText.slice(0, 50)}..." (${(buffer.length / 1024).toFixed(1)} KB)`);
+            const buffer = await googleTTS(vnText, lang);
+            voiceNotes.push({ buffer, text: vnText, lang });
+            aiToolsLog(`[AITool/VN] ✅ [${lang}] "${vnText.slice(0, 50)}..." (${(buffer.length / 1024).toFixed(1)} KB)`);
         } catch (e) {
-            aiToolsError(`[AITool/VN] ❌ Gagal TTS untuk "${vnText.slice(0, 40)}...": ${e.message}`);
+            aiToolsError(`[AITool/VN] ❌ Gagal TTS [${lang}] untuk "${vnText.slice(0, 40)}...": ${e.message}`);
         }
     }
 
     cleanText = cleanText.replace(/\n{3,}/g, '\n\n').trim();
     return { cleanText, voiceNotes };
+}
+
+// ════════════════════════════════════════════════════════════
+//  STIKER  (search image → konversi ke webp sticker WhatsApp)
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Parse [STIKER: query] / [STICKER: query] dari response AI.
+ * Cari gambar via imageSearch, lalu konversi ke webp sticker.
+ * @param {string} text
+ * @param {object} opts - { pack?: string, author?: string }
+ * @returns {Promise<{cleanText: string, stickers: Array<{buffer, query}>}>}
+ */
+export async function extractStickersFromText(text, opts = {}) {
+    const stickers = [];
+    let cleanText = String(text || '');
+
+    const regex = /\[(?:STIKER|STICKER):\s*([^\]]{1,200})\]/gi;
+    const matches = [...cleanText.matchAll(regex)];
+
+    if (matches.length === 0) {
+        return { cleanText, stickers };
+    }
+
+    let StickerCtor = null;
+    let StickerTypesEnum = null;
+    try {
+        const mod = await import('wa-sticker-formatter');
+        StickerCtor = mod.Sticker;
+        StickerTypesEnum = mod.StickerTypes;
+    } catch (e) {
+        aiToolsError(`[AITool/STIKER] ❌ wa-sticker-formatter tidak tersedia: ${e.message}`);
+        // Hapus marker biar gak nongol di teks final
+        for (const match of matches) {
+            cleanText = cleanText.split(match[0]).join('');
+        }
+        return { cleanText: cleanText.replace(/\n{3,}/g, '\n\n').trim(), stickers };
+    }
+
+    const packName = opts.pack || 'Wily Bot AI';
+    const authorName = opts.author || 'Bang Wilykun';
+
+    for (const match of matches) {
+        const fullMarker = match[0];
+        const query = match[1].trim();
+        cleanText = cleanText.split(fullMarker).join('');
+
+        if (!query) continue;
+        try {
+            const found = await searchAndGetImage(query);
+            if (!found || !found.buffer) {
+                aiToolsError(`[AITool/STIKER] ❌ Gambar tidak ketemu untuk "${query}"`);
+                continue;
+            }
+            const sticker = new StickerCtor(found.buffer, {
+                pack: packName,
+                author: authorName,
+                type: StickerTypesEnum.FULL,
+                categories: ['🎭', '✨'],
+                id: `wilyai.${Date.now()}`,
+                quality: 70,
+            });
+            const buffer = await sticker.toBuffer();
+            stickers.push({ buffer, query, sourceUrl: found.url });
+            aiToolsLog(`[AITool/STIKER] ✅ "${query}" → ${(buffer.length / 1024).toFixed(1)} KB webp`);
+        } catch (e) {
+            aiToolsError(`[AITool/STIKER] ❌ Gagal generate sticker "${query}": ${e.message}`);
+        }
+    }
+
+    cleanText = cleanText.replace(/\n{3,}/g, '\n\n').trim();
+    return { cleanText, stickers };
 }
 
 /**
@@ -370,4 +474,11 @@ export async function extractVideosFromText(text, opts = {}) {
  */
 export function hasMediaDownloadMarker(text) {
     return /\[LAGU:\s*[^\]]+\]/i.test(text) || /\[VIDEO:\s*[^\]]+\]/i.test(text);
+}
+
+/**
+ * Helper: cek apakah teks mengandung marker STIKER.
+ */
+export function hasStickerMarker(text) {
+    return /\[(?:STIKER|STICKER):\s*[^\]]+\]/i.test(text);
 }
