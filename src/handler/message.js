@@ -2091,23 +2091,37 @@ export default async function ({ message, type: messagesType }, hisoka) {
                 }
 
                 // ── FIORA AUTO-TRIGGER ──
-                // Trigger Fiora kalau:
-                //  1) User reply ke pesan Fiora sebelumnya (msg id starts with 'FIORA')
-                //  2) User mention bot di pesan biasa (tanpa prefix command)
-                if (!m.command) {
-                        try {
-                                const { runFiora, shouldAutoTriggerFiora } = await import('./fiora.js');
-                                if (await shouldAutoTriggerFiora(hisoka, m)) {
-                                        const inputText = (m.text || '').trim() || ('Send a ' + m.type);
-                                        let groupMetadata = null;
-                                        if (m.isGroup) {
-                                                try { groupMetadata = await hisoka.groupMetadata(m.from); } catch (_) {}
+                // Fiora otomatis nyamber kalau:
+                //  1) User klik tombol/list pada pesan Fiora sebelumnya (interactive/list/button reply yang stanzaId-nya FIORA*)
+                //     → SELALU dirouting ke Fiora, bahkan kalau id tombol kebetulan sama dengan command lain
+                //  2) User reply text ke pesan Fiora sebelumnya tanpa prefix command
+                //  3) User mention bot di pesan biasa tanpa prefix command
+                {
+                        const _btnReplyTypes = new Set([
+                                'interactiveResponseMessage',
+                                'templateButtonReplyMessage',
+                                'buttonsResponseMessage',
+                                'listResponseMessage',
+                        ]);
+                        const _isFioraReply = !!m?.quoted?.key?.id?.startsWith?.('FIORA');
+                        const _isButtonOnFiora = _isFioraReply && _btnReplyTypes.has(m.type);
+
+                        if (_isButtonOnFiora || !m.command) {
+                                try {
+                                        const { runFiora, shouldAutoTriggerFiora } = await import('./fiora.js');
+                                        const _fire = _isButtonOnFiora || (await shouldAutoTriggerFiora(hisoka, m));
+                                        if (_fire) {
+                                                const inputText = (m.text || '').trim() || ('Send a ' + m.type);
+                                                let groupMetadata = null;
+                                                if (m.isGroup) {
+                                                        try { groupMetadata = await hisoka.groupMetadata(m.from); } catch (_) {}
+                                                }
+                                                await runFiora(hisoka, m, inputText, { groupMetadata });
+                                                return;
                                         }
-                                        await runFiora(hisoka, m, inputText, { groupMetadata });
-                                        return;
+                                } catch (e) {
+                                        console.error('\x1b[31m[Fiora auto-trigger]\x1b[39m', e?.message || e);
                                 }
-                        } catch (e) {
-                                console.error('\x1b[31m[Fiora auto-trigger]\x1b[39m', e?.message || e);
                         }
                 }
 
