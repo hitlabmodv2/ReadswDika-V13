@@ -7781,7 +7781,8 @@
     "id": "6289681008411@s.whatsapp.net",
     "name": "Hen V1",
     "lid": "274255723921630@lid",
-    "jid": "6289681008411@s.whatsapp.net"
+    "jid": "6289681008411@s.whatsapp.net",
+    "notify": "Hen V1"
   },
   "6285764251098@s.whatsapp.net": {
     "isContact": true,
@@ -26254,7 +26255,8 @@
     "id": "6289688206739@s.whatsapp.net",
     "name": "Agan Rizkia",
     "lid": "81582920577063@lid",
-    "jid": "6289688206739@s.whatsapp.net"
+    "jid": "6289688206739@s.whatsapp.net",
+    "notify": "Wily"
   },
   "60167331782@s.whatsapp.net": {
     "isContact": true,
@@ -31498,5 +31500,30 @@
     "name": "▫️Losyeh",
     "lid": "7812897869854@lid",
     "jid": "6281266303479@s.whatsapp.net"
+  },
+  "190984528879622@lid": {
+    "id": "190984528879622@lid",
+    "lid": "190984528879622@lid",
+    "imgUrl": "changed"
+  },
+  "81582920577063@lid": {
+    "id": "81582920577063@lid",
+    "lid": "81582920577063@lid",
+    "notify": "Wily"
+  },
+  "274255723921630@lid": {
+    "id": "274255723921630@lid",
+    "lid": "274255723921630@lid",
+    "notify": "Hen V1"
+  },
+  "160086567739642@lid": {
+    "id": "160086567739642@lid",
+    "lid": "160086567739642@lid",
+    "imgUrl": "changed"
+  },
+  "218034048356419@lid": {
+    "id": "218034048356419@lid",
+    "lid": "218034048356419@lid",
+    "imgUrl": "removed"
   }
 }
