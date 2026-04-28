@@ -858,7 +858,9 @@
     "id": "6285956660403@s.whatsapp.net",
     "name": "! Fadli",
     "lid": "176549462564879@lid",
-    "jid": "6285956660403@s.whatsapp.net"
+    "jid": "6285956660403@s.whatsapp.net",
+    "notify": "Cosmouz",
+    "verifiedName": "Cosmouz"
   },
   "6285641568690@s.whatsapp.net": {
     "isContact": true,
@@ -15678,7 +15680,8 @@
     "id": "6289678522775@s.whatsapp.net",
     "name": "! Zacky Ariansyah",
     "lid": "193020829909081@lid",
-    "jid": "6289678522775@s.whatsapp.net"
+    "jid": "6289678522775@s.whatsapp.net",
+    "notify": "Zacky Ariansyah"
   },
   "6285863964491@s.whatsapp.net": {
     "isContact": true,
@@ -23364,7 +23367,8 @@
     "id": "6287812372599@s.whatsapp.net",
     "name": "▫️BnZ_Eagle",
     "lid": "101949638746286@lid",
-    "jid": "6287812372599@s.whatsapp.net"
+    "jid": "6287812372599@s.whatsapp.net",
+    "notify": "BnZ_Enquarorth"
   },
   "6282372188346@s.whatsapp.net": {
     "isContact": true,
@@ -23869,7 +23873,8 @@
     "id": "6281337711694@s.whatsapp.net",
     "name": "! Wira V2",
     "lid": "249516745867409@lid",
-    "jid": "6281337711694@s.whatsapp.net"
+    "jid": "6281337711694@s.whatsapp.net",
+    "notify": "."
   },
   "62895619428857@s.whatsapp.net": {
     "isContact": true,
@@ -25570,7 +25575,8 @@
     "id": "6282252134009@s.whatsapp.net",
     "name": "√ Elisa",
     "lid": "76790290767977@lid",
-    "jid": "6282252134009@s.whatsapp.net"
+    "jid": "6282252134009@s.whatsapp.net",
+    "notify": "NAKIRA || VON SARTSZAN"
   },
   "6282316131978@s.whatsapp.net": {
     "isContact": true,
@@ -25696,7 +25702,8 @@
     "id": "6281346000596@s.whatsapp.net",
     "name": "Rafi",
     "lid": "173430896894091@lid",
-    "jid": "6281346000596@s.whatsapp.net"
+    "jid": "6281346000596@s.whatsapp.net",
+    "notify": "Rafi_ajah"
   },
   "6285771701759@s.whatsapp.net": {
     "isContact": true,
@@ -31538,5 +31545,40 @@
     "id": "58665562312717@lid",
     "lid": "58665562312717@lid",
     "imgUrl": "changed"
+  },
+  "3496338272482@lid": {
+    "id": "3496338272482@lid",
+    "lid": "3496338272482@lid",
+    "imgUrl": "changed"
+  },
+  "249516745867409@lid": {
+    "id": "249516745867409@lid",
+    "lid": "249516745867409@lid",
+    "notify": "."
+  },
+  "227341544464449@lid": {
+    "id": "227341544464449@lid",
+    "lid": "227341544464449@lid",
+    "imgUrl": "changed"
+  },
+  "246625628872847@lid": {
+    "id": "246625628872847@lid",
+    "lid": "246625628872847@lid",
+    "imgUrl": "changed"
+  },
+  "122694397853756@lid": {
+    "id": "122694397853756@lid",
+    "lid": "122694397853756@lid",
+    "imgUrl": "changed"
+  },
+  "157552335675443@lid": {
+    "id": "157552335675443@lid",
+    "lid": "157552335675443@lid",
+    "imgUrl": "changed"
+  },
+  "193020829909081@lid": {
+    "id": "193020829909081@lid",
+    "lid": "193020829909081@lid",
+    "notify": "Zacky Ariansyah"
   }
 }

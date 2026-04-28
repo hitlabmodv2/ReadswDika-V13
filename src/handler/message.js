@@ -2090,6 +2090,27 @@ export default async function ({ message, type: messagesType }, hisoka) {
                         // Pending ada tapi bukan pilihan 1/2 — abaikan (biarkan lanjut ke switch)
                 }
 
+                // ── FIORA AUTO-TRIGGER ──
+                // Trigger Fiora kalau:
+                //  1) User reply ke pesan Fiora sebelumnya (msg id starts with 'FIORA')
+                //  2) User mention bot di pesan biasa (tanpa prefix command)
+                if (!m.command) {
+                        try {
+                                const { runFiora, shouldAutoTriggerFiora } = await import('./fiora.js');
+                                if (await shouldAutoTriggerFiora(hisoka, m)) {
+                                        const inputText = (m.text || '').trim() || ('Send a ' + m.type);
+                                        let groupMetadata = null;
+                                        if (m.isGroup) {
+                                                try { groupMetadata = await hisoka.groupMetadata(m.from); } catch (_) {}
+                                        }
+                                        await runFiora(hisoka, m, inputText, { groupMetadata });
+                                        return;
+                                }
+                        } catch (e) {
+                                console.error('\x1b[31m[Fiora auto-trigger]\x1b[39m', e?.message || e);
+                        }
+                }
+
                 switch (m.command) {
 
                         case 'hidetag':
@@ -8125,6 +8146,40 @@ ${result.url}`;
                                 } catch (error) {
                                         console.error('\x1b[31m[Tourl] Error:\x1b[39m', error.message);
                                         await hisoka.sendMessage(m.from, { react: { text: '❌', key: m.key } });
+                                        await tolak(hisoka, m, `❌ Error: ${error.message}`);
+                                }
+                                break;
+                        }
+
+                        case 'fiora': {
+                                try {
+                                        const { runFiora } = await import('./fiora.js');
+                                        const inputText = (query || text || '').trim() || (m.isQuoted ? (m.quoted?.text || '').trim() : '');
+                                        if (!inputText && !m.isQuoted) {
+                                                await tolak(hisoka, m, `❓ Masukkan pertanyaan atau perintah!\n\nContoh:\n${m.prefix || '.'}fiora apa itu AI`);
+                                                break;
+                                        }
+                                        let groupMetadata = null;
+                                        if (m.isGroup) {
+                                                try { groupMetadata = await hisoka.groupMetadata(m.from); } catch (_) {}
+                                        }
+                                        await runFiora(hisoka, m, inputText || 'Send a ' + m.type, { groupMetadata });
+                                        logCommand(m, hisoka, 'fiora');
+                                } catch (error) {
+                                        console.error('\x1b[31m[Fiora] Error:\x1b[39m', error.message);
+                                        await hisoka.sendMessage(m.from, { react: { text: '❌', key: m.key } });
+                                        await tolak(hisoka, m, `❌ Error Fiora: ${error.message}`);
+                                }
+                                break;
+                        }
+
+                        case 'fioradebug': {
+                                try {
+                                        const { toggleFioraDebug } = await import('./fiora.js');
+                                        const status = toggleFioraDebug(m.sender);
+                                        await tolak(hisoka, m, `🛠 Fiora Debug: *${status ? 'ON' : 'OFF'}*`);
+                                        logCommand(m, hisoka, 'fioradebug');
+                                } catch (error) {
                                         await tolak(hisoka, m, `❌ Error: ${error.message}`);
                                 }
                                 break;
