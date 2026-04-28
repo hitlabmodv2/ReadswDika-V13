@@ -46,6 +46,7 @@ import { updateUserName, getUserName } from '../db/userDb.js';
 import { loadUserMemory, detectAndUpdateMemory, clearUserMemory, memoryToReadable } from '../helper/userMemory.js';
 import { searchAndGetImage, searchAndGetImages, extractImagesFromText } from '../helper/imageSearch.js';
 import { extractVoiceNotesFromText, extractSongsFromText, extractVideosFromText, hasMediaDownloadMarker } from '../helper/aiTools.js';
+import { uploadFile as uploadFileToCdn } from '../helper/uploader.js';
 import { getHistory, addToHistory, clearHistory, clearAllHistory, countHistory, getSessionKey, buildHistoryMeta, wrapCurrentUserMessage } from '../db/aiHistory.js';
 import { sendAIReply } from '../helper/aiReact.js';
 import { buildSmartAlbumCaptionPrompt, buildSmartImageHistoryPrompt, buildSmartImageWaitPrompt, buildWilyAICommandPrompt, buildWilyFallbackUserPrompt, buildWilyMediaUserPrompt, buildWilyVisionContextPrompt } from '../helper/aiPrompt.js';
@@ -8065,7 +8066,70 @@ infoText += `╰═════════════════════�
                                 }
                                 break;
                         }
-                                
+
+                        case 'tourl':
+                        case 'upload':
+                        case 'uploader': {
+                                try {
+                                        const target = m.isQuoted ? quoted : m;
+                                        const allowed = ['imageMessage', 'videoMessage', 'audioMessage', 'stickerMessage', 'documentMessage'];
+                                        if (!allowed.includes(target.type)) {
+                                                await tolak(hisoka, m, `❌ Reply / kirim media (foto, video, audio, sticker, dokumen) dengan caption *${m.prefix || '.'}${m.command}*\n\nOpsional pilih provider:\n• ${m.prefix || '.'}${m.command} catbox\n• ${m.prefix || '.'}${m.command} ornzora\n• ${m.prefix || '.'}${m.command} imgbb\n• ${m.prefix || '.'}${m.command} vikingfile`);
+                                                break;
+                                        }
+
+                                        const providerArg = (query || text || '').trim().toLowerCase();
+                                        const validProviders = ['catbox', 'imgbb', 'ornzora', 'vikingfile'];
+                                        const provider = validProviders.includes(providerArg) ? providerArg : 'catbox';
+
+                                        await hisoka.sendMessage(m.from, { react: { text: '⏳', key: m.key } });
+
+                                        const buffer = await downloadMediaMessage(
+                                                { ...target, message: target.raw || target.message },
+                                                'buffer',
+                                                {},
+                                                { logger: hisoka.logger, reuploadRequest: hisoka.updateMediaMessage }
+                                        );
+
+                                        if (!buffer || buffer.length === 0) {
+                                                await hisoka.sendMessage(m.from, { react: { text: '❌', key: m.key } });
+                                                await tolak(hisoka, m, '❌ Gagal download media.');
+                                                break;
+                                        }
+
+                                        const extMap = {
+                                                imageMessage: 'jpg',
+                                                videoMessage: 'mp4',
+                                                audioMessage: 'mp3',
+                                                stickerMessage: 'webp',
+                                                documentMessage: target?.raw?.documentMessage?.fileName?.split('.').pop() || 'bin'
+                                        };
+                                        const filename = `wily_${Date.now()}.${extMap[target.type] || 'bin'}`;
+
+                                        const t0 = Date.now();
+                                        const result = await uploadFileToCdn(buffer, { provider, filename });
+                                        const took = Date.now() - t0;
+
+                                        const sizeKB = (buffer.length / 1024).toFixed(1);
+                                        const caption = `┌─ 🌐 *UPLOAD SUKSES*
+│ Provider : ${result.provider}
+│ Tipe     : ${target.type.replace('Message', '')}
+│ Ukuran   : ${sizeKB} KB
+│ Durasi   : ${took} ms
+└─────────────
+${result.url}`;
+
+                                        await m.reply(caption);
+                                        await hisoka.sendMessage(m.from, { react: { text: '✅', key: m.key } });
+                                        logCommand(m, hisoka, 'tourl');
+                                } catch (error) {
+                                        console.error('\x1b[31m[Tourl] Error:\x1b[39m', error.message);
+                                        await hisoka.sendMessage(m.from, { react: { text: '❌', key: m.key } });
+                                        await tolak(hisoka, m, `❌ Error: ${error.message}`);
+                                }
+                                break;
+                        }
+
                         case 'jadibot': {
                                 if (!isMainBot(hisoka)) return;
                                 if (!m.isOwner) return;
