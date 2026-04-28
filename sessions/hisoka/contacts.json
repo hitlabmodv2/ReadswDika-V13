@@ -14238,7 +14238,8 @@
     "id": "6287852533256@s.whatsapp.net",
     "name": "!!!Raska",
     "lid": "227049553821873@lid",
-    "jid": "6287852533256@s.whatsapp.net"
+    "jid": "6287852533256@s.whatsapp.net",
+    "notify": "‎"
   },
   "6285217549711@s.whatsapp.net": {
     "isContact": true,
@@ -31595,5 +31596,10 @@
     "id": "94300402618431@lid",
     "lid": "94300402618431@lid",
     "imgUrl": "changed"
+  },
+  "76790290767977@lid": {
+    "id": "76790290767977@lid",
+    "lid": "76790290767977@lid",
+    "notify": "NAKIRA || VON SARTSZAN"
   }
 }
