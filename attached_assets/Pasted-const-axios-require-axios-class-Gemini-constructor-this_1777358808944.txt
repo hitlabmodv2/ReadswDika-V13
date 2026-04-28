@@ -1,0 +1,82 @@
+const axios = require('axios');
+
+class Gemini {
+    constructor() {
+        this.authToken = null;
+        this.tokenExpiry = null;
+    }
+    
+    async getAuthToken() {
+        try {
+            if (this.authToken && this.tokenExpiry && Date.now() < this.tokenExpiry - 300000) return this.authToken;
+            
+            const { data } = await axios.post('https://www.googleapis.com/identitytoolkit/v3/relyingparty/signupNewUser?key=AIzaSyAxof8_SbpDcww38NEQRhNh0Pzvbphh-IQ', {
+                clientType: 'CLIENT_TYPE_ANDROID'
+            }, {
+                headers: {
+                    'accept-encoding': 'gzip',
+                    'accept-language': 'in-ID, en-US',
+                    'connection': 'Keep-Alive',
+                    'content-type': 'application/json',
+                    'user-agent': 'Dalvik/2.1.0 (Linux; U; Android 10; SM-J700F Build/QQ3A.200805.001)',
+                    'x-android-cert': '037CD2976D308B4EFD63EC63C48DC6E7AB7E5AF2',
+                    'x-android-package': 'com.jetkite.gemmy',
+                    'x-client-version': 'Android/Fallback/X24000001/FirebaseCore-Android',
+                    'x-firebase-appcheck': 'eyJlcnJvciI6IlVOS05PV05fRVJST1IifQ==',
+                    'x-firebase-client': 'H4sIAAAAAAAAAKtWykhNLCpJSk0sKVayio7VUSpLLSrOzM9TslIyUqoFAFyivEQfAAAA',
+                    'x-firebase-gmpid': '1:652803432695:android:c4341db6033e62814f33f2',
+                }
+            });
+            
+            if (!data.idToken) throw new Error('Failed to get Gemini auth token.');
+            this.authToken = data.idToken;
+            this.tokenExpiry = Date.now() + 3600 * 1000;
+            
+            return this.authToken;
+        } catch (error) {
+            throw new Error(error.message);
+        }
+    }
+    
+    async chat({ contents, model = 'gemini-flash-latest', ...config }) {
+        try {
+            if (!Array.isArray(contents)) throw new Error('Contents must be a array.');
+            const authToken = await this.getAuthToken();
+            
+            const { data } = await axios.post('https://asia-northeast3-gemmy-ai-bdc03.cloudfunctions.net/gemini', {
+                model,
+                stream: false,
+                request: {
+                    contents: contents,
+                    generationConfig: {
+                        maxOutputTokens: 8192,
+                        ...config
+                    }
+                }
+            }, {
+                headers: {
+                    'accept-encoding': 'gzip',
+                    'authorization': `Bearer ${authToken}`,
+                    'content-type': 'application/json; charset=UTF-8',
+                    'user-agent': 'okhttp/5.3.2',
+                }
+            });
+            
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!text) throw new Error('Gemini returned empty response.');
+            
+            return text;
+        } catch (error) {
+            throw new Error(error.message);
+        }
+    }
+}
+
+// Usage:
+const g = new Gemini();
+g.chat({
+    contents: [{
+        role: 'user',
+        parts: [{ text: 'hi!' }]
+    }]
+}).then(console.log);
