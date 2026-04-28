@@ -134,16 +134,25 @@ function decodeJid(jid) {
 
 // ─────────────────────────────────────────────
 // M SHIM — tambahin chat / mtype / id / react / edit
+// (safe — skip kalau property udah ada biar nggak nabrak inject.js)
 // ─────────────────────────────────────────────
+function safeDefine(obj, key, value) {
+        if (obj == null) return;
+        if (Object.prototype.hasOwnProperty.call(obj, key)) return;
+        try {
+                Object.defineProperty(obj, key, { value, configurable: true, writable: true });
+        } catch (_) {
+                try { obj[key] = value; } catch (_) {}
+        }
+}
+
 function wrapM(m, hisoka) {
         if (m.__fioraWrapped) return m;
 
-        Object.defineProperties(m, {
-                chat: { value: m.from, configurable: true },
-                mtype: { value: m.type, configurable: true },
-                id: { value: m.key?.id, configurable: true },
-                __fioraWrapped: { value: true },
-        });
+        safeDefine(m, 'chat', m.from);
+        safeDefine(m, 'mtype', m.type);
+        safeDefine(m, 'id', m.key?.id);
+        safeDefine(m, '__fioraWrapped', true);
 
         if (typeof m.react !== 'function') {
                 m.react = async (emoji) => {
@@ -163,15 +172,14 @@ function wrapM(m, hisoka) {
                 };
         }
 
-        // quoted juga butuh shim
+        // quoted juga butuh shim — tapi hati2: inject.js udah set sender non-configurable.
+        // Pakai safeDefine yang skip kalau key udah ada.
         if (m.quoted && !m.quoted.__fioraWrapped) {
-                Object.defineProperties(m.quoted, {
-                        chat: { value: m.from, configurable: true },
-                        mtype: { value: m.quoted.type, configurable: true },
-                        id: { value: m.quoted.key?.id, configurable: true },
-                        sender: { value: m.quoted.sender || m.sender, configurable: true },
-                        __fioraWrapped: { value: true },
-                });
+                safeDefine(m.quoted, 'chat', m.from);
+                safeDefine(m.quoted, 'mtype', m.quoted.type);
+                safeDefine(m.quoted, 'id', m.quoted.key?.id);
+                safeDefine(m.quoted, 'sender', m.quoted.sender || m.sender);
+                safeDefine(m.quoted, '__fioraWrapped', true);
         }
 
         return m;
@@ -1264,7 +1272,25 @@ async function fiora(hisoka, m, input, { isToolCall = false, groupMetadata } = {
                 start = Date.now();
         }
 
-        let parts = isToolCall ? input : await serializeMessage(conn, m, input, { groupMetadata });
+        let parts;
+        try {
+                parts = isToolCall ? input : await serializeMessage(conn, m, input, { groupMetadata });
+        } catch (e) {
+                console.error('[FIORA serialize]', e);
+                parts = [{ text: `[SERIALIZE ERROR] ${e?.message || e}\nuser_text: ${input || ''}` }];
+        }
+
+        // Simpan pesan user lebih awal (idempoten) supaya history tetap kebangun
+        // walau Gemini error / network error / tools gagal.
+        if (!isToolCall) {
+                try {
+                        const list = getMsgs(m.chat);
+                        list.push({ role: 'user', parts, userJid: m.sender, timestamp: Date.now() });
+                        setMsgs(m.chat, list);
+                } catch (e) {
+                        console.error('[FIORA history save user]', e);
+                }
+        }
 
         const contextMessages = buildContext({
                 chats: getAllChats(),
@@ -1319,10 +1345,17 @@ async function fiora(hisoka, m, input, { isToolCall = false, groupMetadata } = {
                         start = Date.now();
                 }
 
-                const list = getMsgs(m.chat);
-                list.push({ role: 'user', parts, userJid: m.sender, timestamp: Date.now() });
-                list.push({ role: 'assistant', parts: [{ text: res }], userJid: m.sender, timestamp: Date.now() });
-                setMsgs(m.chat, list);
+                // user message udah disimpan di awal (kecuali isToolCall — itu tool result, simpan sekarang).
+                try {
+                        const list = getMsgs(m.chat);
+                        if (isToolCall) {
+                                list.push({ role: 'user', parts, userJid: m.sender, timestamp: Date.now() });
+                        }
+                        list.push({ role: 'assistant', parts: [{ text: res }], userJid: m.sender, timestamp: Date.now() });
+                        setMsgs(m.chat, list);
+                } catch (e) {
+                        console.error('[FIORA history save assistant]', e);
+                }
 
                 try { await m.react(''); } catch (_) {}
 
