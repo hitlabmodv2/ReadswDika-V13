@@ -1349,15 +1349,40 @@ export async function runFiora(hisoka, m, input, opts = {}) {
 }
 
 export async function shouldAutoTriggerFiora(hisoka, m) {
-        // 1) Reply ke pesan Fiora sebelumnya
+        // 1) Reply / click pada pesan Fiora sebelumnya (msg id diawali FIORA*)
         if (m?.quoted?.key?.id?.startsWith?.('FIORA')) return true;
-        // 2) Mention bot
+
+        // 2) Mention bot SAAT lagi reply pesan orang lain (bukan pesan bot sendiri)
+        //    Use case: "Fiora, analisa pesan ini" — Fiora baca quoted sebagai konteks utama
+        //    Skip kalau bare mention tanpa quote → itu domain Wily (chat bebas).
         try {
                 const conn = makeConn(hisoka);
                 const botJid = conn.decodeJid(conn.user.id);
-                const mentions = utilParseMention(m.text || '');
-                if (mentions.includes(botJid)) return true;
-                if (mentions.includes(jidNormalizedUser(hisoka.user?.id))) return true;
+                const botLid = hisoka.user?.lid ? jidNormalizedUser(hisoka.user.lid) : null;
+                const botNum = (hisoka.user?.id || '').split(':')[0]?.split('@')[0] || '';
+
+                const mentionedJids = Array.from(new Set([
+                        ...(Array.isArray(m.mentions) ? m.mentions : []),
+                        ...(m.message?.extendedTextMessage?.contextInfo?.mentionedJid || []),
+                        ...(m.message?.imageMessage?.contextInfo?.mentionedJid || []),
+                        ...(m.message?.videoMessage?.contextInfo?.mentionedJid || []),
+                        ...(m.message?.documentMessage?.contextInfo?.mentionedJid || []),
+                        ...(m.message?.audioMessage?.contextInfo?.mentionedJid || []),
+                        ...(m.message?.stickerMessage?.contextInfo?.mentionedJid || []),
+                        ...(m.content?.contextInfo?.mentionedJid || []),
+                        ...utilParseMention(m.text || ''),
+                ])).filter(Boolean);
+
+                const isMentioned = mentionedJids.some((j) => {
+                        if (!j) return false;
+                        const n = String(j).split(':')[0]?.split('@')[0] || String(j).split('@')[0];
+                        return j === botJid || j === botLid || (botNum && n === botNum);
+                }) || (botNum && (m.text || '').includes('@' + botNum));
+
+                const isReplyingToOther = m.isQuoted && m.quoted?.key?.fromMe !== true;
+
+                if (isMentioned && isReplyingToOther) return true;
         } catch (_) {}
+
         return false;
 }

@@ -1375,16 +1375,24 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                         const wilyQuotedParticipant = (m.content?.contextInfo?.participant || '').split('@')[0].split(':')[0];
                                         const _wilyQuotedStanzaId = m.content?.contextInfo?.stanzaId || '';
                                         const _wilyCachedQuoted = _wilyQuotedStanzaId ? hisoka.cacheMsg?.get(_wilyQuotedStanzaId) : null;
-                                        const isReplyToBotMsg = m.isQuoted && (
+                                        // Skip Fiora chain (msg id diawali 'FIORA') — biar reply/click pesan Fiora dihandle Fiora, bukan Wily
+                                        const _isFioraQuoted = !!m.quoted?.key?.id?.startsWith?.('FIORA');
+                                        const isReplyToBotMsg = m.isQuoted && !_isFioraQuoted && (
                                                 m.quoted?.key?.fromMe === true ||
                                                 (wilyBotNum && wilyQuotedParticipant === wilyBotNum) ||
                                                 (_wilyCachedQuoted?.key?.fromMe === true)
                                         );
+                                        // Mention bot SAAT lagi reply pesan orang lain → biar Fiora yang handle (use case "analisa pesan ini")
+                                        const _wilyMentionedWhileReplying = isWilyMentioned && m.isQuoted && !_isFioraQuoted &&
+                                                m.quoted?.key?.fromMe !== true &&
+                                                !(wilyBotNum && wilyQuotedParticipant === wilyBotNum);
+                                        const _isWilyMentionedSolo = isWilyMentioned && !_wilyMentionedWhileReplying;
 
                                         // WilyAutoReply — respek scope: pm=hanya DM, gc=hanya grup, all=keduanya
+                                        // Catatan: kalau lagi mention-bot-saat-reply-orang-lain, Wily skip (Fiora yg handle)
                                         const isPrivateDM = !m.isGroup && m.from !== 'status@broadcast';
-                                        const triggerGroup = scopeAllowGC && m.isGroup && (isWilyMentioned || isReplyToBotMsg);
-                                        const triggerPM    = scopeAllowPM && isPrivateDM;
+                                        const triggerGroup = scopeAllowGC && m.isGroup && (_isWilyMentionedSolo || isReplyToBotMsg);
+                                        const triggerPM    = scopeAllowPM && isPrivateDM && !_isFioraQuoted;
                                         const isLoadedCommand = m.command && !m.isBot && hisoka.loadedCommands?.some(c => c.toLowerCase() === m.command);
                                         if (isLoadedCommand) {
                                                 // Command bot harus tetap lanjut ke switch-case, jangan ditahan auto-reply AI/cooldown.
