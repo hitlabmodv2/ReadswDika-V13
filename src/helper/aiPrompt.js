@@ -20,7 +20,7 @@
  */
 'use strict';
 
-import { buildReactPromptRules, buildPersonalityBoost, buildAntiDeteksiAIRules } from './aiReact.js';
+import { buildReactPromptRules, buildPersonalityBoost } from './aiReact.js';
 import { formatMemoryForPrompt } from './userMemory.js';
 
 export function buildWilyFallbackUserPrompt(mediaType = '') {
@@ -878,6 +878,5 @@ Contoh BENAR:
 ${buildReactPromptRules()}
 ${buildPersonalityBoost(userName)}
 ${userMemory ? formatMemoryForPrompt(userMemory, userName) : ''}
-${buildDynamicAIBoost({ userMessage, hasImage, hasSticker, hasVideo, isDocumentMode, history })}
-${buildAntiDeteksiAIRules(userName)}`;
+${buildDynamicAIBoost({ userMessage, hasImage, hasSticker, hasVideo, isDocumentMode, history })}`;
 }
