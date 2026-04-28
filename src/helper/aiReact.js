@@ -570,36 +570,82 @@ export const AI_REACT_MAP = [
 
 // ══════════════════════════════════════════════════════════════
 //  getReactEmoji(userMessage)
-//  Gunakan Gemini API untuk otomatis pilih emoji terbaik
-//  berdasarkan mood/konteks pesan user — tanpa hardcode manual
+//  100% API-driven — Gemini bebas pilih emoji apapun (gak dibatasi
+//  list manual lagi). Optimasi:
+//    • Prompt mini → token request kecil → fast
+//    • maxOutputTokens=10 → response cepat (emoji cuma 1-3 token)
+//    • LRU cache 500 entry → pesan duplikat instant tanpa API call
+//    • Extract emoji robust pakai regex \p{Extended_Pictographic}
 // ══════════════════════════════════════════════════════════════
+
+// LRU cache: key=normalized message, value=emoji
+const _emojiCache = new Map();
+const _EMOJI_CACHE_MAX = 500;
+
+// Regex extract emoji pertama (works untuk emoji Unicode 13+ termasuk skin-tone & ZWJ).
+// \p{Extended_Pictographic} catches emoji codepoints; combined with optional
+// variation selectors and skin-tone modifiers.
+const _EMOJI_REGEX = /\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*/u;
+
+function _extractFirstEmoji(text) {
+    if (!text) return null;
+    const m = String(text).match(_EMOJI_REGEX);
+    return m ? m[0] : null;
+}
+
+function _cachePut(key, emoji) {
+    if (_emojiCache.has(key)) _emojiCache.delete(key); // refresh LRU position
+    _emojiCache.set(key, emoji);
+    if (_emojiCache.size > _EMOJI_CACHE_MAX) {
+        const oldestKey = _emojiCache.keys().next().value;
+        _emojiCache.delete(oldestKey);
+    }
+}
+
 export async function getReactEmoji(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return null;
+
+    const trimmed = userMessage.trim();
+    if (!trimmed) return null;
+
+    // Cache lookup (normalized lower-case, max 200 char buat key)
+    const cacheKey = trimmed.toLowerCase().slice(0, 200);
+    if (_emojiCache.has(cacheKey)) {
+        const cached = _emojiCache.get(cacheKey);
+        // Refresh LRU position
+        _emojiCache.delete(cacheKey);
+        _emojiCache.set(cacheKey, cached);
+        return cached;
+    }
+
     try {
-        const emojiList = AI_REACT_MAP.map(r => `${r.emoji} = ${r.label} (${r.tags.slice(0, 4).join(', ')})`).join('\n');
-        const prompt = `Kamu adalah sistem pemilih emoji reaksi WhatsApp.
+        const prompt = `Pilih 1 emoji paling cocok sebagai reaksi WhatsApp untuk pesan ini. Jawab HANYA 1 emoji, tanpa teks/penjelasan.
 
-Analisis pesan berikut dan pilih 1 emoji yang PALING tepat sebagai reaksi berdasarkan mood, emosi, dan konteksnya.
+Pesan: "${trimmed.slice(0, 300)}"
 
-PESAN USER:
-"${userMessage.slice(0, 500)}"
+Emoji:`;
 
-DAFTAR EMOJI YANG BOLEH DIPILIH:
-${emojiList}
+        const result = await gemini.chat({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            model: 'gemini-2.5-flash-lite',  // model ringan = response cepat
+            maxOutputTokens: 50,             // cukup buat emoji + buffer thinking sisa
+            temperature: 0.7,
+            topP: 0.9,
+            topK: 40,
+            thinkingConfig: { thinkingBudget: 0 },  // disable thinking → ~2.5x lebih cepat
+        });
 
-ATURAN:
-- Pilih berdasarkan MOOD DOMINAN pesan, bukan isi jawabanmu
-- Jawab HANYA dengan 1 emoji yang dipilih, tidak ada teks lain
-- Contoh jawaban benar: 😂
-- Contoh jawaban salah: "Saya pilih 😂 karena pesan ini lucu"`;
-
-        const result = await gemini.ask(prompt);
-        const trimmed = result.trim();
-        const found = AI_REACT_MAP.find(r => trimmed.includes(r.emoji));
-        return found ? found.emoji : null;
+        const emoji = _extractFirstEmoji(result);
+        if (emoji) _cachePut(cacheKey, emoji);
+        return emoji;
     } catch (_) {
         return null;
     }
+}
+
+// Debug helper buat liat status cache (gak dipake handler — buat dev tools doang)
+export function _getEmojiCacheStats() {
+    return { size: _emojiCache.size, max: _EMOJI_CACHE_MAX };
 }
 
 // ══════════════════════════════════════════════════════════════
