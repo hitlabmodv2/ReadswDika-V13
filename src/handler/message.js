@@ -8207,6 +8207,93 @@ ${result.url}`;
                                 break;
                         }
 
+                        case 'fioraclear':
+                        case 'fiorareset': {
+                                try {
+                                        const { clearFioraHistory, clearFioraHistoryAll, getFioraHistoryStats } = await import('./fiora.js');
+                                        const arg = (query || text || '').trim().toLowerCase();
+                                        // .fioraclear all → owner only, hapus semua chat
+                                        if (arg === 'all' || arg === 'global') {
+                                                if (!m.isOwner) {
+                                                        await tolak(hisoka, m, '⛔ Khusus owner.');
+                                                        break;
+                                                }
+                                                const total = clearFioraHistoryAll();
+                                                await tolak(hisoka, m, `🧹 History Fiora *semua chat* dihapus (${total} pesan).`);
+                                        } else {
+                                                const before = getFioraHistoryStats(m.from).count;
+                                                const cleared = clearFioraHistory(m.from);
+                                                if (before === 0) await tolak(hisoka, m, '🪹 Belum ada history Fiora di chat ini.');
+                                                else await tolak(hisoka, m, `🧹 History Fiora di chat ini dihapus (${cleared} pesan). Mulai obrolan baru!`);
+                                        }
+                                        logCommand(m, hisoka, 'fioraclear');
+                                } catch (error) {
+                                        await tolak(hisoka, m, `❌ Error: ${error.message}`);
+                                }
+                                break;
+                        }
+
+                        case 'fiorastatus': {
+                                try {
+                                        const { getFioraConfig, getFioraHistoryStats } = await import('./fiora.js');
+                                        const cfg = getFioraConfig();
+                                        const stat = getFioraHistoryStats(m.from);
+                                        const lines = [
+                                                '🧠 *Fiora AI — Status*',
+                                                `• Master: ${cfg.enabled ? '🟢 ON' : '🔴 OFF'}`,
+                                                `• Auto-trigger: ${cfg.autoTrigger ? '🟢 ON' : '🔴 OFF'}`,
+                                                `• History chat ini: ${stat.count} pesan`,
+                                                '',
+                                                'Owner only:',
+                                                `• ${m.prefix || '.'}fioraon — nyalain Fiora`,
+                                                `• ${m.prefix || '.'}fioraoff — matiin Fiora`,
+                                                `• ${m.prefix || '.'}fioraauto on|off — toggle auto-trigger`,
+                                                `• ${m.prefix || '.'}fioraclear all — hapus history semua chat`,
+                                                '',
+                                                'Semua user:',
+                                                `• ${m.prefix || '.'}fioraclear — hapus history chat ini`,
+                                        ].join('\n');
+                                        await tolak(hisoka, m, lines);
+                                        logCommand(m, hisoka, 'fiorastatus');
+                                } catch (error) {
+                                        await tolak(hisoka, m, `❌ Error: ${error.message}`);
+                                }
+                                break;
+                        }
+
+                        case 'fioraon':
+                        case 'fioraoff': {
+                                if (!m.isOwner) { await tolak(hisoka, m, '⛔ Khusus owner.'); break; }
+                                try {
+                                        const { setFioraConfig } = await import('./fiora.js');
+                                        const next = m.command === 'fioraon';
+                                        setFioraConfig({ enabled: next });
+                                        await tolak(hisoka, m, `🧠 Fiora AI: *${next ? 'ON' : 'OFF'}* (tersimpan ke config).`);
+                                        logCommand(m, hisoka, m.command);
+                                } catch (error) {
+                                        await tolak(hisoka, m, `❌ Error: ${error.message}`);
+                                }
+                                break;
+                        }
+
+                        case 'fioraauto': {
+                                if (!m.isOwner) { await tolak(hisoka, m, '⛔ Khusus owner.'); break; }
+                                try {
+                                        const { setFioraConfig, getFioraConfig } = await import('./fiora.js');
+                                        const arg = (query || text || '').trim().toLowerCase();
+                                        let next;
+                                        if (arg === 'on' || arg === '1' || arg === 'true') next = true;
+                                        else if (arg === 'off' || arg === '0' || arg === 'false') next = false;
+                                        else next = !getFioraConfig().autoTrigger; // toggle
+                                        setFioraConfig({ autoTrigger: next });
+                                        await tolak(hisoka, m, `🤖 Fiora Auto-Trigger: *${next ? 'ON' : 'OFF'}* (tersimpan ke config).`);
+                                        logCommand(m, hisoka, 'fioraauto');
+                                } catch (error) {
+                                        await tolak(hisoka, m, `❌ Error: ${error.message}`);
+                                }
+                                break;
+                        }
+
                         case 'jadibot': {
                                 if (!isMainBot(hisoka)) return;
                                 if (!m.isOwner) return;

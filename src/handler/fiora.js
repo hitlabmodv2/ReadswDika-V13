@@ -55,7 +55,7 @@ import {
         reelsSearch,
 } from '../lib/tools.js';
 import { JSONDB } from '../db/json.js';
-import { parseMention as utilParseMention } from './../helper/utils.js';
+import { parseMention as utilParseMention, loadConfig, saveConfig } from './../helper/utils.js';
 
 // ─────────────────────────────────────────────
 // MEMORY (history per chat)
@@ -77,6 +77,74 @@ function setMsgs(chat, list) {
 
 function getAllChats() {
         return fioraDB.cache || {};
+}
+
+// ─────────────────────────────────────────────
+// HISTORY MANAGEMENT (clear per-chat / per-user / global)
+// ─────────────────────────────────────────────
+export function clearFioraHistory(chat) {
+        if (!chat) return 0;
+        try {
+                if (fioraDB.exists(chat)) {
+                        const v = fioraDB.read(chat);
+                        const count = Array.isArray(v?.fioradb) ? v.fioradb.length : 0;
+                        fioraDB.write(chat, { fioradb: [] });
+                        return count;
+                }
+        } catch (_) {}
+        return 0;
+}
+
+export function clearFioraHistoryAll() {
+        let total = 0;
+        try {
+                for (const chat of fioraDB.keys()) {
+                        const v = fioraDB.read(chat);
+                        if (Array.isArray(v?.fioradb)) total += v.fioradb.length;
+                        fioraDB.write(chat, { fioradb: [] });
+                }
+        } catch (_) {}
+        return total;
+}
+
+export function getFioraHistoryStats(chat) {
+        if (!chat) return { count: 0 };
+        try {
+                if (fioraDB.exists(chat)) {
+                        const v = fioraDB.read(chat);
+                        return { count: Array.isArray(v?.fioradb) ? v.fioradb.length : 0 };
+                }
+        } catch (_) {}
+        return { count: 0 };
+}
+
+// ─────────────────────────────────────────────
+// CONFIG (on/off persisted ke config.json → key "fiora")
+// ─────────────────────────────────────────────
+const DEFAULT_FIORA_CONFIG = {
+        enabled: true,       // master switch — kalau false, semua trigger Fiora di-skip
+        autoTrigger: true,   // auto-trigger (reply ke FIORA*, mention bot saat reply orang lain)
+};
+
+export function getFioraConfig() {
+        const cfg = loadConfig();
+        return { ...DEFAULT_FIORA_CONFIG, ...(cfg.fiora || {}) };
+}
+
+export function setFioraConfig(patch) {
+        const cfg = loadConfig();
+        cfg.fiora = { ...DEFAULT_FIORA_CONFIG, ...(cfg.fiora || {}), ...(patch || {}) };
+        saveConfig(cfg);
+        return cfg.fiora;
+}
+
+export function isFioraEnabled() {
+        return !!getFioraConfig().enabled;
+}
+
+export function isFioraAutoTriggerEnabled() {
+        const c = getFioraConfig();
+        return !!(c.enabled && c.autoTrigger);
 }
 
 export function toggleFioraDebug(sender) {
@@ -1378,10 +1446,18 @@ async function fiora(hisoka, m, input, { isToolCall = false, groupMetadata } = {
 }
 
 export async function runFiora(hisoka, m, input, opts = {}) {
+        // Master switch: skip kalau Fiora dimatikan dari config.json
+        if (!isFioraEnabled() && !opts.isToolCall) {
+                try { await m.reply?.('⚠️ Fiora AI lagi *OFF*. Owner bisa nyalain pakai `.fioraon`.'); } catch (_) {}
+                return;
+        }
         return fiora(hisoka, m, input, opts);
 }
 
 export async function shouldAutoTriggerFiora(hisoka, m) {
+        // Hormati config: kalau auto-trigger dimatikan / Fiora off → skip
+        if (!isFioraAutoTriggerEnabled()) return false;
+
         // 1) Reply / click pada pesan Fiora sebelumnya (msg id diawali FIORA*)
         if (m?.quoted?.key?.id?.startsWith?.('FIORA')) return true;
 
