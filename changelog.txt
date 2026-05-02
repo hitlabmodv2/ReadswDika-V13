@@ -1,3 +1,72 @@
+🤖 Script Wily Bot — *V14*
+📅 Updated: Jumat, 2 Mei 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+📦 Total Update: *10*
+🔧 5 Bug Fix
+♻️ 2 Pembaruan
+✨ 3 Fitur Baru (3 command)
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 BUG FIX
+
+◈ Fix Jadibot Tidak Reconnect Setelah Disconnect
+> ✦ isSessionValid sekarang cek auth.db, bukan creds.json
+> ✦ Jadibot kini reconnect otomatis seperti seharusnya
+
+◈ Fix Jadibot Tidak Auto-Start Saat Bot Restart
+> ✦ isJadibotSessionValid juga diperbarui ke auth.db
+> ✦ Semua jadibot tersimpan kini aktif kembali otomatis
+
+◈ Fix Crash di cachedGroupMetadata
+> ✦ Tambah optional chaining (?.) pada participants.length
+> ✦ Tidak lagi error saat data grup belum ada participants
+
+◈ Fix .dbstats Error Jika Tabel Belum Ada
+> ✦ Cek keberadaan tabel dulu sebelum query
+> ✦ Tidak crash meski DB baru / jadibot baru terbuat
+
+◈ Fix Session Jadibot Dianggap Tidak Valid Pasca Migrasi
+> ✦ Semua pengecekan sesi diselaraskan ke format SQLite
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+♻️ PEMBARUAN
+
+◈ .dbstats Lebih Lengkap
+> ✦ Sekarang tampilkan jumlah contacts, groups, settings
+> ✦ Aman untuk semua kondisi (tabel ada atau belum)
+
+◈ Sistem Reconnect Jadibot Lebih Stabil
+> ✦ Guard duplikat reconnect diperketat
+> ✦ Komentar internal diselaraskan dengan sistem baru
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✨ FITUR BARU
+
+◈ Migrasi Session ke SQLite (auth.db)
+> ✦ Semua data session (creds + keys) disimpan di 1 file
+> ✦ Tidak ada lagi ratusan file pre-key-*.json
+> ✦ Lebih stabil, hemat inode & disk, anti-corrupt
+
+◈ SQLiteDB — Penyimpanan contacts/groups/settings
+> ✦ Pengganti JSONDB, interface identik, performa lebih baik
+> ✦ Auto-migrasi dari JSON lama ke SQLite saat pertama jalan
+> ✦ Semua sesi (main + jadibot) sudah pakai sistem ini
+
+◈ *.dbstats / .sessiondb / .sessionstat* — Statistik Database
+> ✦ Tampil info creds, total keys, rincian per kategori
+> ✦ Tampil jumlah contacts, groups, settings tersimpan
+> ✦ Tampil ukuran file auth.db semua sesi (main + jadibot)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🤖 Wily-Bot — Updated *2 Mei 2026*
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
 🤖 Script Wily Bot — *V12*
 📅 Updated: Rabu, 22 April 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
