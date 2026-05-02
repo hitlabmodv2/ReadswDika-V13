@@ -40,6 +40,7 @@ import { getRandomEmoji } from '../helper/emoji.js'
 import { injectClient } from '../helper/inject.js'
 import messageHandler from '../handler/message.js'
 import JSONDB from '../db/json.js'
+import SQLiteDB from '../db/sqlitedb.js'
 import { cleanStaleSessionFiles } from './cleaner.js'
 import { logError } from '../db/errorLog.js'
 import { useSQLiteAuthState } from './../../lib/useSQLiteAuthState.js'
@@ -699,9 +700,9 @@ async function startJadibot(number, sendReply, mainBotNumber, editMsg = null, se
   injectClient(
     sock,
     new Map(),
-    new JSONDB('contacts', sessionDir),
-    new JSONDB('groups', sessionDir),
-    new JSONDB('settings', sessionDir)
+    new SQLiteDB('contacts', sessionDir),
+    new SQLiteDB('groups', sessionDir),
+    new SQLiteDB('settings', sessionDir)
   )
 
   sock.ev.on('creds.update', async (...args) => {
@@ -1023,9 +1024,9 @@ async function startJadibotQR(number, sendReply, sendImage, mainBotNumber, durat
   injectClient(
     sock,
     new Map(),
-    new JSONDB('contacts', sessionDir),
-    new JSONDB('groups', sessionDir),
-    new JSONDB('settings', sessionDir)
+    new SQLiteDB('contacts', sessionDir),
+    new SQLiteDB('groups', sessionDir),
+    new SQLiteDB('settings', sessionDir)
   )
 
   sock.ev.on('creds.update', async (...args) => {

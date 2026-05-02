@@ -43,6 +43,7 @@ import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode-terminal';
 
 import JSONDB from './src/db/json.js';
+import SQLiteDB from './src/db/sqlitedb.js';
 import { initBotStats } from './src/db/botStats.js';
 import { injectClient } from './src/helper/inject.js';
 import { getCaseName, loadConfig } from './src/helper/utils.js';
@@ -436,9 +437,9 @@ async function main() {
                 console.log('[CACHE] Message cache cleared');
                 }
         }, 60000); // sampe sini
-        const groups = new JSONDB('groups', sessionDir);
-        const contacts = new JSONDB('contacts', sessionDir);
-        const settings = new JSONDB('settings', sessionDir);
+        const groups = new SQLiteDB('groups', sessionDir);
+        const contacts = new SQLiteDB('contacts', sessionDir);
+        const settings = new SQLiteDB('settings', sessionDir);
 
         // Cache pemetaan LID -> nomor PN asli (persisten selama runtime)
         const lidPnCache = new Map();
