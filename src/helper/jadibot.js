@@ -88,7 +88,7 @@ function maskNumber(num) {
 }
 
 function isSessionValid(sessionDir) {
-  return fs.existsSync(path.join(sessionDir, 'creds.json'))
+  return fs.existsSync(path.join(sessionDir, 'auth.db'))
 }
 
 function ensureJadibotDataDir() {
@@ -1124,7 +1124,7 @@ async function startJadibotQR(number, sendReply, sendImage, mainBotNumber, durat
       }
 
       // Jika sudah pernah connect via QR, selalu coba reconnect
-      // (creds.json mungkin belum tersimpan tepat waktu sebelum disconnect sesaat)
+      // (auth.db mungkin belum tersimpan tepat waktu sebelum disconnect sesaat)
       if (hasConnected || isSessionValid(sessionDir)) {
         // Guard: cegah duplicate reconnect
         if (reconnectingJadibot.has(number)) {

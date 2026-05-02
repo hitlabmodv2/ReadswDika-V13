@@ -156,7 +156,7 @@ global.autoStartedJadibot = new Set();
 
 function isJadibotSessionValid(number) {
   const dir = path.join(process.cwd(), 'jadibot', number);
-  return fs.existsSync(path.join(dir, 'creds.json'));
+  return fs.existsSync(path.join(dir, 'auth.db'));
 }
 
 /* ================= BOT ADMIN STATUS TRACKER ================= */
