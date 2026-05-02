@@ -20,10 +20,10 @@
  */
 import axios from 'axios';
 import https from 'https';
-import fs from 'fs';
 import path from 'path';
+import { kvGet, kvSet, kvMigrateFromJSON } from '../db/datadb.js';
 
-const TOKEN_CACHE_FILE = path.join(process.cwd(), 'data', 'gemini_tokens.json');
+kvMigrateFromJSON('gemini_tokens', path.join(process.cwd(), 'data', 'gemini_tokens.json'));
 
 const GEMINI_VERBOSE_LOGS = process.env.WILY_VERBOSE_LOGS === 'true' || process.env.BOT_DEBUG_LOG === 'true';
 const GEMINI_TIMING_LOGS = process.env.GEMINI_TIMING_LOGS !== 'false';
@@ -70,21 +70,19 @@ class Gemini {
 
     _loadTokenCache() {
         try {
-            if (!fs.existsSync(TOKEN_CACHE_FILE)) return;
-            const raw = JSON.parse(fs.readFileSync(TOKEN_CACHE_FILE, 'utf-8'));
+            const raw = kvGet('gemini_tokens', null);
+            if (!raw) return;
             const now = Date.now();
             this.tokenPool = (raw.pool || []).filter(t => t && t.token && t.expiry && now < t.expiry - 300000);
             if (this.tokenPool.length > 0) {
-                geminiLog(`\x1b[32m[Gemini]\x1b[0m ♻️ Loaded ${this.tokenPool.length} cached token(s) from disk`);
+                geminiLog(`\x1b[32m[Gemini]\x1b[0m ♻️ Loaded ${this.tokenPool.length} cached token(s) from DB`);
             }
         } catch (_) {}
     }
 
     _saveTokenCache() {
         try {
-            const dir = path.dirname(TOKEN_CACHE_FILE);
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(TOKEN_CACHE_FILE, JSON.stringify({ pool: this.tokenPool, savedAt: Date.now() }, null, 2));
+            kvSet('gemini_tokens', { pool: this.tokenPool, savedAt: Date.now() });
         } catch (_) {}
     }
 

@@ -44,6 +44,7 @@ import qrcode from 'qrcode-terminal';
 
 import JSONDB from './src/db/json.js';
 import SQLiteDB from './src/db/sqlitedb.js';
+import { kvGet, kvSet, kvMigrateFromJSON } from './src/db/datadb.js';
 import { initBotStats } from './src/db/botStats.js';
 import { injectClient } from './src/helper/inject.js';
 import { getCaseName, loadConfig } from './src/helper/utils.js';
@@ -160,19 +161,14 @@ function isJadibotSessionValid(number) {
 }
 
 /* ================= BOT ADMIN STATUS TRACKER ================= */
-const BOT_ADMIN_PATH = path.join(process.cwd(), 'data', 'botadmin.json');
+kvMigrateFromJSON('botadmin', path.join(process.cwd(), 'data', 'botadmin.json'));
 
 function loadBotAdminData() {
-  try {
-    if (fs.existsSync(BOT_ADMIN_PATH)) return JSON.parse(fs.readFileSync(BOT_ADMIN_PATH, 'utf-8'));
-  } catch (_) {}
-  return {};
+  return kvGet('botadmin', {});
 }
 
 function saveBotAdminData(data) {
-  try {
-    fs.writeFileSync(BOT_ADMIN_PATH, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (_) {}
+  kvSet('botadmin', data);
 }
 
 function saveBotAdminStatus(hisoka, allGroups) {
