@@ -1,11 +1,3 @@
-/**
- * ───────────────────────────────
- *  SQLiteDB — pengganti JSONDB
- *  Menyimpan contacts/groups/settings
- *  ke dalam auth.db (SQLite)
- *  Interface identik dengan JSONDB
- * ───────────────────────────────
- */
 'use strict';
 
 import { createRequire } from 'module';
@@ -14,6 +6,38 @@ import fs from 'fs';
 
 const _require = createRequire(import.meta.url);
 const Database = _require('better-sqlite3');
+
+/* ── Singleton per file path ── */
+const _dbCache = new Map();
+
+function getSharedDb(dbPath) {
+    const abs = path.resolve(dbPath);
+    if (_dbCache.has(abs)) return _dbCache.get(abs);
+
+    const db = new Database(abs);
+    db.pragma('journal_mode = WAL');
+    db.pragma('busy_timeout = 5000');
+    db.pragma('synchronous = NORMAL');
+    db.pragma('cache_size = -16000');
+    db.pragma('temp_store = memory');
+    db.pragma('mmap_size = 268435456');
+    db.pragma('foreign_keys = ON');
+    db.pragma('wal_autocheckpoint = 100');
+
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS store (
+            collection  TEXT NOT NULL,
+            key         TEXT NOT NULL,
+            value       TEXT,
+            updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+            PRIMARY KEY (collection, key)
+        );
+        CREATE INDEX IF NOT EXISTS idx_store_collection ON store (collection);
+    `);
+
+    _dbCache.set(abs, db);
+    return db;
+}
 
 export class SQLiteDB {
     #db = null;
@@ -30,26 +54,10 @@ export class SQLiteDB {
 
         this.#collection = fileName;
 
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-        const dbPath = path.join(dir, 'auth.db');
-        this.#db = new Database(dbPath);
-        this.#db.pragma('journal_mode = WAL');
-        this.#db.pragma('synchronous = NORMAL');
-        this.#db.pragma('cache_size = -5000');
-
-        this.#db.exec(`
-            CREATE TABLE IF NOT EXISTS store (
-                collection  TEXT NOT NULL,
-                key         TEXT NOT NULL,
-                value       TEXT,
-                updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-                PRIMARY KEY (collection, key)
-            );
-            CREATE INDEX IF NOT EXISTS idx_store_collection ON store (collection);
-        `);
+        const dbPath   = path.join(dir, 'auth.db');
+        this.#db       = getSharedDb(dbPath);
 
         this.#stmtGet    = this.#db.prepare('SELECT value FROM store WHERE collection = ? AND key = ?');
         this.#stmtAll    = this.#db.prepare('SELECT key, value FROM store WHERE collection = ?');
@@ -78,12 +86,11 @@ export class SQLiteDB {
             const existing = this.#db.prepare('SELECT COUNT(*) as c FROM store WHERE collection = ?').get(this.#collection);
             if (existing.c > 0) return;
 
-            const insertMany = this.#db.transaction((items) => {
+            this.#db.transaction((items) => {
                 for (const [k, v] of items) {
                     this.#stmtUpsert.run(this.#collection, k, JSON.stringify(v));
                 }
-            });
-            insertMany(entries);
+            })(entries);
 
             console.log(`\x1b[32m[SQLiteDB]\x1b[39m Migrasi ${entries.length} entri dari ${fileName}.json → auth.db`);
         } catch (err) {
@@ -101,8 +108,7 @@ export class SQLiteDB {
         this.#hasLoaded = true;
     }
 
-    load() { this.#loadCache(); }
-
+    load()         { this.#loadCache(); }
     loadIfNeeded() { if (!this.#hasLoaded) this.#loadCache(); }
 
     exists(key) {
@@ -129,20 +135,9 @@ export class SQLiteDB {
         this.#stmtDelete.run(this.#collection, key);
     }
 
-    keys() {
-        this.loadIfNeeded();
-        return Object.keys(this.#cache);
-    }
-
-    values() {
-        this.loadIfNeeded();
-        return Object.values(this.#cache);
-    }
-
-    entries() {
-        this.loadIfNeeded();
-        return Object.entries(this.#cache);
-    }
+    keys()    { this.loadIfNeeded(); return Object.keys(this.#cache); }
+    values()  { this.loadIfNeeded(); return Object.values(this.#cache); }
+    entries() { this.loadIfNeeded(); return Object.entries(this.#cache); }
 
     find(predicate) {
         this.loadIfNeeded();

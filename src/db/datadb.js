@@ -13,9 +13,15 @@ const DB_PATH  = path.join(DATA_DIR, 'data.db');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new Database(DB_PATH);
+
 db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');
 db.pragma('synchronous = NORMAL');
-db.pragma('cache_size = -2000');
+db.pragma('cache_size = -32000');
+db.pragma('temp_store = memory');
+db.pragma('mmap_size = 268435456');
+db.pragma('foreign_keys = ON');
+db.pragma('wal_autocheckpoint = 100');
 
 db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -34,6 +40,21 @@ db.exec(`
         updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     );
 `);
+
+export const stmtUserGet    = db.prepare('SELECT data FROM users WHERE id = ?');
+export const stmtUserUpsert = db.prepare(`
+    INSERT INTO users (id, data, updated_at) VALUES (?, ?, strftime('%s','now'))
+    ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
+`);
+
+export const stmtAiGet       = db.prepare('SELECT messages, last_activity FROM ai_history WHERE session_key = ?');
+export const stmtAiUpsert    = db.prepare(`
+    INSERT INTO ai_history (session_key, messages, last_activity) VALUES (?, ?, ?)
+    ON CONFLICT(session_key) DO UPDATE SET messages = excluded.messages, last_activity = excluded.last_activity
+`);
+export const stmtAiDelete    = db.prepare('DELETE FROM ai_history WHERE session_key = ?');
+export const stmtAiDeleteAll = db.prepare('DELETE FROM ai_history');
+export const stmtAiCount     = db.prepare('SELECT COUNT(*) as c FROM ai_history');
 
 const stmtKvGet    = db.prepare('SELECT value FROM kv WHERE key = ?');
 const stmtKvUpsert = db.prepare(`
@@ -54,8 +75,7 @@ export function kvSet(key, value) {
 export function kvMigrateFromJSON(key, jsonPath, transform = null) {
     try {
         if (!fs.existsSync(jsonPath)) return;
-        const existing = stmtKvGet.get(key);
-        if (existing) return;
+        if (stmtKvGet.get(key)) return;
         const raw  = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
         const data = transform ? transform(raw) : raw;
         stmtKvUpsert.run(key, JSON.stringify(data));

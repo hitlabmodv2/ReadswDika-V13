@@ -1,48 +1,21 @@
 'use strict';
 
-import { createRequire } from 'module';
 import path from 'path';
 import fs from 'fs';
-
-const _require = createRequire(import.meta.url);
-const Database = _require('better-sqlite3');
+import db, { stmtAiGet, stmtAiUpsert, stmtAiDelete, stmtAiDeleteAll, stmtAiCount } from './datadb.js';
 
 const DATA_DIR             = path.join(process.cwd(), 'data');
-const DB_PATH              = path.join(DATA_DIR, 'data.db');
 const EXPIRE_MS            = 6 * 60 * 60 * 1000;
 const MAX_HISTORY_MESSAGES = 20;
 const MAX_TEXT_PER_MESSAGE = 1500;
-
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('synchronous = NORMAL');
-db.pragma('cache_size = -2000');
-
-db.exec(`
-    CREATE TABLE IF NOT EXISTS ai_history (
-        session_key   TEXT PRIMARY KEY,
-        messages      TEXT NOT NULL DEFAULT '[]',
-        last_activity INTEGER NOT NULL
-    );
-`);
-
-const stmtGet       = db.prepare('SELECT messages, last_activity FROM ai_history WHERE session_key = ?');
-const stmtUpsert    = db.prepare(`
-    INSERT INTO ai_history (session_key, messages, last_activity) VALUES (?, ?, ?)
-    ON CONFLICT(session_key) DO UPDATE SET messages = excluded.messages, last_activity = excluded.last_activity
-`);
-const stmtDelete    = db.prepare('DELETE FROM ai_history WHERE session_key = ?');
-const stmtDeleteAll = db.prepare('DELETE FROM ai_history');
-const stmtCount     = db.prepare('SELECT COUNT(*) as c FROM ai_history');
 
 /* ── Auto-migrasi dari data/ai_history/*.json ── */
 (function migrateFromJSON() {
     try {
         const histDir = path.join(DATA_DIR, 'ai_history');
         if (!fs.existsSync(histDir)) return;
-        const existing = stmtCount.get().c;
+
+        const existing = stmtAiCount.get().c;
         if (existing > 0) return;
 
         const files = fs.readdirSync(histDir).filter(f => f.endsWith('.json'));
@@ -59,7 +32,7 @@ const stmtCount     = db.prepare('SELECT COUNT(*) as c FROM ai_history');
         if (!items.length) return;
 
         db.transaction(() => {
-            for (const [k, msgs, ts] of items) stmtUpsert.run(k, msgs, ts);
+            for (const [k, msgs, ts] of items) stmtAiUpsert.run(k, msgs, ts);
         })();
         console.log(`\x1b[32m[AiHistory]\x1b[39m Migrasi ${items.length} sesi dari JSON → data.db`);
     } catch {}
@@ -112,11 +85,11 @@ function clip(text, max) {
 
 /* ── Public API ── */
 export function getHistory(sessionKey) {
-    const row = stmtGet.get(sessionKey);
+    const row = stmtAiGet.get(sessionKey);
     if (!row) return [];
 
     if (Date.now() - row.last_activity > EXPIRE_MS) {
-        stmtDelete.run(sessionKey);
+        stmtAiDelete.run(sessionKey);
         return [];
     }
 
@@ -124,7 +97,7 @@ export function getHistory(sessionKey) {
 }
 
 export function addToHistory(sessionKey, userText, botText, meta = {}) {
-    const row      = stmtGet.get(sessionKey);
+    const row      = stmtAiGet.get(sessionKey);
     const messages = row ? (() => { try { return JSON.parse(row.messages); } catch { return []; } })() : [];
     const ts       = Date.now();
     const sharedMeta = { ...meta, timestamp: meta.timestamp || ts };
@@ -136,7 +109,7 @@ export function addToHistory(sessionKey, userText, botText, meta = {}) {
         messages.splice(0, 2);
     }
 
-    stmtUpsert.run(sessionKey, JSON.stringify(messages), ts);
+    stmtAiUpsert.run(sessionKey, JSON.stringify(messages), ts);
 }
 
 export function wrapCurrentUserMessage(userText, meta = {}) {
@@ -170,17 +143,17 @@ export function buildHistoryMeta(m, extra = {}) {
 }
 
 export function clearHistory(sessionKey) {
-    stmtDelete.run(sessionKey);
+    stmtAiDelete.run(sessionKey);
 }
 
 export function clearAllHistory() {
-    const { c } = stmtCount.get();
-    stmtDeleteAll.run();
+    const { c } = stmtAiCount.get();
+    stmtAiDeleteAll.run();
     return c;
 }
 
 export function countHistory() {
-    return stmtCount.get().c;
+    return stmtAiCount.get().c;
 }
 
 export function getSessionKey(m) {
