@@ -2353,6 +2353,108 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                 break;
                         }
 
+                        case 'dbstats':
+                        case 'sessiondb':
+                        case 'sessionstat': {
+                                if (!m.isOwner) return;
+                                try {
+                                        const Database = _require('better-sqlite3');
+                                        const { BufferJSON } = _require('socketon');
+
+                                        const readDbStats = (dbPath) => {
+                                                if (!fs.existsSync(dbPath)) return null;
+                                                const db = new Database(dbPath, { readonly: true });
+                                                try {
+                                                        const hasCreds = db.prepare('SELECT COUNT(*) as c FROM creds').get().c > 0;
+                                                        const totalKeys = db.prepare('SELECT COUNT(*) as c FROM keys').get().c;
+                                                        const keysByType = db.prepare(
+                                                                'SELECT category, COUNT(*) as c FROM keys GROUP BY category ORDER BY c DESC'
+                                                        ).all();
+                                                        const dbSize = fs.statSync(dbPath).size;
+                                                        return { hasCreds, totalKeys, keysByType, dbSize };
+                                                } finally {
+                                                        db.close();
+                                                }
+                                        };
+
+                                        const formatSize = (bytes) => {
+                                                if (bytes < 1024) return `${bytes} B`;
+                                                if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+                                                return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+                                        };
+
+                                        const mainDbPath = path.join(global.sessionDir, 'auth.db');
+                                        const mainStats = readDbStats(mainDbPath);
+
+                                        const now = new Date().toLocaleTimeString('id-ID', {
+                                                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                                                timeZone: 'Asia/Jakarta'
+                                        });
+
+                                        let out = `╭═══════════════════════╮\n`;
+                                        out += `║   🗄️ *SESSION DB STATS*   \n`;
+                                        out += `╠═══════════════════════╣\n`;
+                                        out += `│ 🕐 _Realtime: ${now} WIB_\n`;
+                                        out += `╠═══════════════════════╣\n`;
+                                        out += `║   📦 *MAIN SESSION*   \n`;
+                                        out += `╠═══════════════════════╣\n`;
+
+                                        if (!mainStats) {
+                                                out += `│ ⚠️ auth.db belum ada\n`;
+                                        } else {
+                                                out += `│ ✅ Creds    » ${mainStats.hasCreds ? 'Tersimpan' : 'Kosong'}\n`;
+                                                out += `│ 🔑 Total Keys » ${mainStats.totalKeys}\n`;
+                                                out += `│ 💾 DB Size  » ${formatSize(mainStats.dbSize)}\n`;
+                                                if (mainStats.keysByType.length > 0) {
+                                                        out += `├───────────────────────┤\n`;
+                                                        out += `│ 📊 *Rincian Keys:*\n`;
+                                                        for (const row of mainStats.keysByType) {
+                                                                out += `│  • ${row.category}: ${row.c}\n`;
+                                                        }
+                                                }
+                                        }
+
+                                        const jadibotDir = path.join(process.cwd(), 'jadibot');
+                                        if (fs.existsSync(jadibotDir)) {
+                                                const jadibotSessions = fs.readdirSync(jadibotDir).filter(n => {
+                                                        const p = path.join(jadibotDir, n, 'auth.db');
+                                                        return fs.existsSync(p);
+                                                });
+
+                                                if (jadibotSessions.length > 0) {
+                                                        out += `╠═══════════════════════╣\n`;
+                                                        out += `║   🤖 *JADIBOT SESSIONS*   \n`;
+                                                        out += `╠═══════════════════════╣\n`;
+                                                        out += `│ 📱 Total » ${jadibotSessions.length} sesi\n`;
+                                                        out += `├───────────────────────┤\n`;
+                                                        let totalJadibotKeys = 0;
+                                                        let totalJadibotSize = 0;
+                                                        for (const num of jadibotSessions) {
+                                                                const jPath = path.join(jadibotDir, num, 'auth.db');
+                                                                const jStats = readDbStats(jPath);
+                                                                if (jStats) {
+                                                                        totalJadibotKeys += jStats.totalKeys;
+                                                                        totalJadibotSize += jStats.dbSize;
+                                                                        const shortNum = num.replace(/^62/, '0').slice(0, 12) + '..';
+                                                                        out += `│  📞 ${shortNum} » ${jStats.totalKeys} keys (${formatSize(jStats.dbSize)})\n`;
+                                                                }
+                                                        }
+                                                        out += `├───────────────────────┤\n`;
+                                                        out += `│ 🔑 Total Keys » ${totalJadibotKeys}\n`;
+                                                        out += `│ 💾 Total Size » ${formatSize(totalJadibotSize)}\n`;
+                                                }
+                                        }
+
+                                        out += `╰═══════════════════════╯`;
+
+                                        await m.reply(out);
+                                        logCommand(m, hisoka, 'dbstats');
+                                } catch (err) {
+                                        await m.reply(`❌ Error baca DB stats:\n${err.message}`);
+                                }
+                                break;
+                        }
+
                         case 'group':
                         case 'listgroup': {
                                 const groups = Object.values(await hisoka.groupFetchAllParticipating());
