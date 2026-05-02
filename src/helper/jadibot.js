@@ -24,7 +24,6 @@ import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
 const {
   default: makeWASocket,
-  useMultiFileAuthState,
   fetchLatestBaileysVersion,
   DisconnectReason,
   jidNormalizedUser,
@@ -43,6 +42,7 @@ import messageHandler from '../handler/message.js'
 import JSONDB from '../db/json.js'
 import { cleanStaleSessionFiles } from './cleaner.js'
 import { logError } from '../db/errorLog.js'
+import { useSQLiteAuthState } from './../../lib/useSQLiteAuthState.js'
 
 /* ================= LOGGER ================= */
 const silentLogger = pino({ level: 'silent' })
@@ -678,7 +678,7 @@ async function startJadibot(number, sendReply, mainBotNumber, editMsg = null, se
   // Bersihkan pre-key stale & session lama sebelum load
   cleanStaleSessionFiles(sessionDir)
 
-  const { state, saveCreds } = await useMultiFileAuthState(sessionDir)
+  const { state, saveCreds } = useSQLiteAuthState(path.join(sessionDir, 'auth.db'), silentLogger)
   const { version } = await fetchLatestBaileysVersion()
 
   const sock = makeWASocket({
@@ -1002,7 +1002,7 @@ async function startJadibotQR(number, sendReply, sendImage, mainBotNumber, durat
   fs.mkdirSync(sessionDir, { recursive: true })
   cleanStaleSessionFiles(sessionDir)
 
-  const { state, saveCreds } = await useMultiFileAuthState(sessionDir)
+  const { state, saveCreds } = useSQLiteAuthState(path.join(sessionDir, 'auth.db'), silentLogger)
   const { version } = await fetchLatestBaileysVersion()
 
   const sock = makeWASocket({

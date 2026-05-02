@@ -1,0 +1,394 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║          TUTORIAL: SESSIONS AUTH.DB UNTUK BOT WHATSAPP (BAILEYS)           ║
+║                    Menggunakan SQLite + better-sqlite3                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BAGIAN 1 — APA ITU auth.db, auth.db-shm, dan auth.db-wal?
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Ketika kamu login bot WA, Baileys menyimpan "session" (data login) supaya
+  kamu tidak perlu scan QR code terus setiap kali bot restart.
+
+  Ada 3 file yang muncul di folder sessions/:
+
+  📄 auth.db
+     ↳ File database utama SQLite. Berisi tabel "creds" dan "keys".
+        Ini adalah file yang paling penting.
+
+  📄 auth.db-shm
+     ↳ Shared Memory file. File sementara yang dibuat SQLite secara otomatis
+        ketika mode WAL aktif. Bisa dihapus kalau bot sedang tidak berjalan,
+        akan dibuat ulang otomatis.
+
+  📄 auth.db-wal
+     ↳ Write-Ahead Log. Tempat SQLite menulis perubahan dulu sebelum
+        di-commit ke auth.db utama. Ini yang membuat proses simpan data
+        lebih cepat dan aman dari corrupt.
+        (WAL = teknik database supaya tulis-baca bisa jalan bersamaan)
+
+  Perumpamaan sederhana:
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  auth.db     = buku catatan utama (isi data sesungguhnya)           │
+  │  auth.db-wal = kertas coretan sementara (tulis di sini dulu)        │
+  │  auth.db-shm = papan pengumuman (koordinasi baca/tulis bersamaan)   │
+  └─────────────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BAGIAN 2 — STRUKTUR TABEL DI DALAM auth.db
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  auth.db memiliki 2 tabel:
+
+  ┌─── Tabel: creds ─────────────────────────────────────────────────────┐
+  │  id          → Selalu 1 (hanya 1 baris)                              │
+  │  data        → JSON string berisi credentials (nomor, keys, dll)     │
+  │  updated_at  → Timestamp kapan terakhir diupdate                     │
+  └──────────────────────────────────────────────────────────────────────┘
+
+    Contoh isi kolom "data" di tabel creds (ringkasan):
+    {
+      "noiseKey": { "private": "...", "public": "..." },
+      "signedIdentityKey": { "private": "...", "public": "..." },
+      "registrationId": 12345,
+      "me": { "id": "628xxx@s.whatsapp.net", "name": "Nama Bot" },
+      ...
+    }
+
+  ┌─── Tabel: keys ──────────────────────────────────────────────────────┐
+  │  category    → Jenis key (misal: "pre-key", "session", "sender-key") │
+  │  id          → ID unik untuk key tersebut                            │
+  │  data        → JSON string berisi data key terenkripsi               │
+  │  updated_at  → Timestamp kapan terakhir diupdate                     │
+  └──────────────────────────────────────────────────────────────────────┘
+
+    Contoh kategori yang tersimpan di tabel keys:
+    - "pre-key"        → Pre-keys untuk enkripsi Signal Protocol
+    - "session"        → Session keys per kontak
+    - "sender-key"     → Keys untuk grup WhatsApp
+    - "app-state-sync" → Sinkronisasi state aplikasi
+    - "identity"       → Identity keys kontak
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BAGIAN 3 — INSTALL PACKAGE YANG DIBUTUHKAN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Kamu butuh package better-sqlite3 untuk baca/tulis database SQLite:
+
+    npm install better-sqlite3
+    # atau
+    yarn add better-sqlite3
+
+  Pastikan versi Node.js kamu >= 18 agar kompatibel.
+
+  Kalau pakai ES Modules (type: "module" di package.json), gunakan import:
+    import Database from 'better-sqlite3';
+
+  Kalau pakai CommonJS (tanpa type: "module"), gunakan require:
+    const Database = require('better-sqlite3');
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BAGIAN 4 — KODE LENGKAP: useSQLiteAuthState()
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Simpan kode ini di file: lib/useSQLiteAuthState.js
+  ──────────────────────────────────────────────────
+
+  // ─── lib/useSQLiteAuthState.js ──────────────────────────────────────────
+  import Database from 'better-sqlite3';
+  import { initAuthCreds, BufferJSON } from 'baileys';
+  import path from 'path';
+  import fs from 'fs';
+
+  /**
+   * useSQLiteAuthState
+   * Fungsi pengganti useMultiFileAuthState, tapi menyimpan session ke SQLite
+   * @param {string} dbPath - Path ke file auth.db (misal: './sessions/auth.db')
+   * @returns {{ state, saveCreds }}
+   */
+  export function useSQLiteAuthState(dbPath = './sessions/auth.db') {
+    // Buat folder sessions jika belum ada
+    const folder = path.dirname(dbPath);
+    if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
+
+    // Buka (atau buat) database SQLite
+    const db = new Database(dbPath);
+
+    // Aktifkan WAL mode supaya tulis/baca lebih cepat dan aman
+    db.pragma('journal_mode = WAL');
+    db.pragma('synchronous = NORMAL');
+
+    // Buat tabel jika belum ada
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS creds (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        data TEXT NOT NULL,
+        updated_at INTEGER
+      );
+
+      CREATE TABLE IF NOT EXISTS keys (
+        category TEXT NOT NULL,
+        id TEXT NOT NULL,
+        data TEXT,
+        updated_at INTEGER,
+        PRIMARY KEY (category, id)
+      );
+    `);
+
+    // ── Prepared statements (lebih efisien dari query biasa) ───────────────
+    const getCreds    = db.prepare('SELECT data FROM creds WHERE id = 1');
+    const upsertCreds = db.prepare(`
+      INSERT INTO creds (id, data, updated_at) VALUES (1, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
+    `);
+
+    const getKey    = db.prepare('SELECT data FROM keys WHERE category = ? AND id = ?');
+    const upsertKey = db.prepare(`
+      INSERT INTO keys (category, id, data, updated_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT(category, id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
+    `);
+    const deleteKey = db.prepare('DELETE FROM keys WHERE category = ? AND id = ?');
+
+    // ── Baca credentials dari database ────────────────────────────────────
+    const readCreds = () => {
+      const row = getCreds.get();
+      if (!row) return initAuthCreds(); // Kalau kosong, buat credentials baru
+      return JSON.parse(row.data, BufferJSON.reviver);
+    };
+
+    // ── Simpan credentials ke database ────────────────────────────────────
+    const writeCreds = (creds) => {
+      const data = JSON.stringify(creds, BufferJSON.replacer);
+      upsertCreds.run(data, Date.now());
+    };
+
+    // ── Auth state object yang dipakai Baileys ─────────────────────────────
+    const state = {
+      creds: readCreds(),
+
+      keys: {
+        // Baileys memanggil get() saat butuh key tertentu
+        get(type, ids) {
+          const result = {};
+          for (const id of ids) {
+            const row = getKey.get(type, id);
+            if (row?.data) {
+              result[id] = JSON.parse(row.data, BufferJSON.reviver);
+            }
+          }
+          return result;
+        },
+
+        // Baileys memanggil set() saat ada key baru atau update
+        set(data) {
+          // Gunakan transaction supaya semua perubahan tersimpan sekaligus
+          // (lebih cepat dan aman)
+          const transaction = db.transaction(() => {
+            for (const [category, ids] of Object.entries(data)) {
+              for (const [id, value] of Object.entries(ids)) {
+                if (value != null) {
+                  const serialized = JSON.stringify(value, BufferJSON.replacer);
+                  upsertKey.run(category, id, serialized, Date.now());
+                } else {
+                  // Kalau value null, artinya key tersebut harus dihapus
+                  deleteKey.run(category, id);
+                }
+              }
+            }
+          });
+          transaction();
+        },
+      },
+    };
+
+    // ── Fungsi saveCreds yang dipanggil setelah creds berubah ─────────────
+    const saveCreds = () => {
+      writeCreds(state.creds);
+    };
+
+    return { state, saveCreds };
+  }
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BAGIAN 5 — CARA PAKAI DI SCRIPT BOT UTAMA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Ini contoh lengkap cara integrasi ke file bot utama (misal: index.js):
+
+  // ─── index.js ──────────────────────────────────────────────────────────
+  import makeWASocket, { DisconnectReason } from 'baileys';
+  import { Boom } from '@hapi/boom';
+  import { useSQLiteAuthState } from './lib/useSQLiteAuthState.js';
+
+  async function startBot() {
+    // 1. Load state dari SQLite
+    const { state, saveCreds } = useSQLiteAuthState('./sessions/auth.db');
+
+    // 2. Buat koneksi WA dengan state tersebut
+    const conn = makeWASocket({
+      auth: state,
+      printQRInTerminal: true,   // Tampilkan QR di terminal saat pertama kali
+      browser: ['NamaBot', 'Chrome', '1.0.0'],
+    });
+
+    // 3. Simpan credentials setiap kali ada perubahan
+    //    (ini WAJIB ada, tanpa ini session tidak tersimpan!)
+    conn.ev.on('creds.update', saveCreds);
+
+    // 4. Handle koneksi putus / reconnect
+    conn.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
+      if (qr) {
+        console.log('📱 Scan QR Code di atas untuk login!');
+      }
+
+      if (connection === 'open') {
+        console.log('✅ Bot berhasil terhubung ke WhatsApp!');
+      }
+
+      if (connection === 'close') {
+        const shouldReconnect =
+          (lastDisconnect?.error instanceof Boom) &&
+          lastDisconnect.error.output?.statusCode !== DisconnectReason.loggedOut;
+
+        if (shouldReconnect) {
+          console.log('🔄 Koneksi terputus, reconnect...');
+          startBot(); // Restart otomatis
+        } else {
+          console.log('🚫 Logout! Hapus sessions/auth.db lalu jalankan ulang.');
+        }
+      }
+    });
+
+    // 5. Terima pesan
+    conn.ev.on('messages.upsert', ({ messages }) => {
+      const m = messages[0];
+      if (!m.message || m.key.fromMe) return;
+
+      const text = m.message.conversation || '';
+      console.log('📩 Pesan masuk:', text);
+
+      // Balas pesan
+      if (text === 'halo') {
+        conn.sendMessage(m.key.remoteJid, { text: 'Halo juga! 👋' });
+      }
+    });
+  }
+
+  startBot();
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BAGIAN 6 — ALUR KERJA SESSION (GAMBAR TEKS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Pertama kali jalankan (belum ada auth.db):
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  startBot()                                                         │
+  │     ↓                                                               │
+  │  useSQLiteAuthState() → buat auth.db baru, tabel creds kosong       │
+  │     ↓                                                               │
+  │  state.creds = initAuthCreds() → credentials kosong baru           │
+  │     ↓                                                               │
+  │  makeWASocket() → QR Code muncul di terminal                        │
+  │     ↓                                                               │
+  │  User scan QR                                                       │
+  │     ↓                                                               │
+  │  creds.update event terpanggil → saveCreds() → simpan ke auth.db   │
+  │     ↓                                                               │
+  │  connection: "open" → Bot aktif! ✅                                  │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  Restart bot (auth.db sudah ada):
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  startBot()                                                         │
+  │     ↓                                                               │
+  │  useSQLiteAuthState() → baca auth.db yang sudah ada                 │
+  │     ↓                                                               │
+  │  state.creds = data dari tabel creds → langsung ada credentials     │
+  │     ↓                                                               │
+  │  makeWASocket() → TIDAK perlu scan QR lagi                          │
+  │     ↓                                                               │
+  │  connection: "open" → Bot aktif langsung! ✅                         │
+  └─────────────────────────────────────────────────────────────────────┘
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BAGIAN 7 — TIPS PENTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ✅ JANGAN LUPA pasang listener creds.update:
+     conn.ev.on('creds.update', saveCreds);
+     Tanpa ini, session tidak tersimpan → QR terus setiap restart!
+
+  ✅ BACKUP auth.db secara berkala:
+     Cukup copy file auth.db ke tempat lain.
+     Kalau mau pindah server, copy auth.db lalu jalankan bot di server baru.
+
+  ✅ LOGOUT / RESET SESSION:
+     Cukup hapus file auth.db (dan auth.db-shm, auth.db-wal jika ada).
+     Jalankan ulang → QR code muncul lagi.
+
+  ✅ MULTI-SESI (beberapa nomor WA dalam 1 script):
+     Gunakan path berbeda untuk tiap nomor:
+       useSQLiteAuthState('./sessions/nomor1/auth.db')
+       useSQLiteAuthState('./sessions/nomor2/auth.db')
+
+  ❌ JANGAN buka auth.db dengan aplikasi lain saat bot berjalan.
+     SQLite hanya boleh diakses 1 proses dalam mode WAL untuk write.
+
+  ❌ JANGAN simpan auth.db di repositori publik (GitHub, dll).
+     File ini berisi data login WA kamu! Tambahkan ke .gitignore:
+       sessions/
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BAGIAN 8 — PERBANDINGAN: SQLite vs Multi-File (Cara Lama)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌────────────────────┬─────────────────────┬────────────────────────────┐
+  │ Aspek              │ Multi-File (default) │ SQLite (auth.db)           │
+  ├────────────────────┼─────────────────────┼────────────────────────────┤
+  │ Jumlah file        │ Banyak (1 per key)   │ Cukup 1 file auth.db       │
+  │ Kecepatan baca     │ Sedang               │ Cepat (prepared statement) │
+  │ Kecepatan tulis    │ Lambat (banyak I/O)  │ Cepat (WAL + transaction)  │
+  │ Mudah di-backup    │ Ribet (folder besar) │ Mudah (copy 1 file)        │
+  │ Aman dari corrupt  │ Rentan               │ Lebih aman (WAL mode)      │
+  │ Mudah deploy       │ Butuh sync folder    │ Copy 1 file saja           │
+  └────────────────────┴─────────────────────┴────────────────────────────┘
+
+  → Untuk production/server, SQLite lebih direkomendasikan.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BAGIAN 9 — STRUKTUR FOLDER YANG DISARANKAN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  project-bot/
+  ├── index.js                   ← file utama bot
+  ├── package.json
+  ├── .gitignore                 ← isi: sessions/
+  ├── lib/
+  │   └── useSQLiteAuthState.js  ← kode dari Bagian 4
+  └── sessions/
+      ├── auth.db                ← file session (auto-dibuat)
+      ├── auth.db-shm            ← auto-dibuat saat bot jalan
+      └── auth.db-wal            ← auto-dibuat saat bot jalan
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  RINGKASAN SINGKAT (TL;DR)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. Install: npm install better-sqlite3
+  2. Buat file lib/useSQLiteAuthState.js (kode di Bagian 4)
+  3. Di index.js: ganti useMultiFileAuthState dengan useSQLiteAuthState
+  4. Pastikan conn.ev.on('creds.update', saveCreds) terpasang
+  5. Jalankan bot → scan QR → session otomatis tersimpan ke auth.db
+  6. Restart bot → langsung connect tanpa QR lagi ✅
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    Selesai! Semoga tutorialnya bermanfaat 🙏                ║
+╚══════════════════════════════════════════════════════════════════════════════╝

@@ -26,7 +26,6 @@ const _require = createRequire(import.meta.url);
 const {
         default: makeWASocket,
         delay,
-        useMultiFileAuthState,
         DisconnectReason,
         Browsers,
         makeCacheableSignalKeyStore,
@@ -57,6 +56,7 @@ import { saveViewOnceCache, cleanOldViewOnceCache, hasViewOnceCache } from './sr
 import { setupCrashGuard } from './src/helper/crashGuard.js';
 import { logError } from './src/db/errorLog.js';
 import { initHotReload, getHandler, stopHotReload, onReload } from './src/helper/hotReload.js';
+import { useSQLiteAuthState } from './lib/useSQLiteAuthState.js';
 
 /* ================= VOONCE AUTO-SAVE ================= */
 async function autoSaveViewOnce(message, hisoka) {
@@ -420,7 +420,7 @@ async function main() {
         // Ini yang menyebabkan delay parah setelah offline lama
         cleanStaleSessionFiles(sessionDir)
 
-        const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+        const { state, saveCreds } = useSQLiteAuthState(path.join(sessionDir, 'auth.db'), logger);
         const { version, isLatest } = await fetchLatestBaileysVersion();
 
         console.info(`\x1b[32m→ Baileys  :\x1b[39m v${version.join('.')}${isLatest ? '' : ' (update tersedia)'}`);
