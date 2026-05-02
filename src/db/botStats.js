@@ -2,13 +2,15 @@
 
 import path from 'path';
 import { kvGet, kvSet, kvMigrateFromJSON } from './datadb.js';
+import { checkpointAll } from '../../lib/dbPool.js';
 
 const DATA_DIR         = path.join(process.cwd(), 'data');
 const STATS_JSON       = path.join(DATA_DIR, 'bot_stats.json');
 const HEARTBEAT_JSON   = path.join(DATA_DIR, 'heartbeat.json');
 
-const HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000;
-const DEAD_THRESHOLD_MS     = 2 * 60 * 60 * 1000;
+const HEARTBEAT_INTERVAL_MS  = 60 * 60 * 1000;
+const DEAD_THRESHOLD_MS      = 2 * 60 * 60 * 1000;
+const CHECKPOINT_INTERVAL_MS = 30 * 60 * 1000;
 
 const defaultStats = { startTime: null, totalRestarts: 0, lastHeartbeat: null };
 
@@ -20,7 +22,8 @@ function saveStats(stats)   { kvSet('bot_stats', stats); }
 function updateHeartbeat()  { kvSet('heartbeat', { time: Date.now() }); }
 function getLastHeartbeat() { return kvGet('heartbeat', null)?.time ?? null; }
 
-let heartbeatInterval = null;
+let heartbeatInterval  = null;
+let checkpointInterval = null;
 
 export function initBotStats() {
     const stats = loadStats();
@@ -43,8 +46,15 @@ export function initBotStats() {
     saveStats(stats);
     updateHeartbeat();
 
+    // Heartbeat setiap 1 jam
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     heartbeatInterval = setInterval(updateHeartbeat, HEARTBEAT_INTERVAL_MS);
+
+    // WAL checkpoint setiap 30 menit — jaga WAL tetap kecil saat idle
+    if (checkpointInterval) clearInterval(checkpointInterval);
+    checkpointInterval = setInterval(() => {
+        try { checkpointAll(); } catch {}
+    }, CHECKPOINT_INTERVAL_MS);
 
     return stats;
 }
@@ -81,5 +91,6 @@ export function resetUptime() {
 }
 
 export function stopHeartbeat() {
-    if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+    if (heartbeatInterval)  { clearInterval(heartbeatInterval);  heartbeatInterval  = null; }
+    if (checkpointInterval) { clearInterval(checkpointInterval); checkpointInterval = null; }
 }

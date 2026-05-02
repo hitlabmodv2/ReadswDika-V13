@@ -1,43 +1,8 @@
 'use strict';
 
-import { createRequire } from 'module';
 import path from 'path';
 import fs from 'fs';
-
-const _require = createRequire(import.meta.url);
-const Database = _require('better-sqlite3');
-
-/* ── Singleton per file path ── */
-const _dbCache = new Map();
-
-function getSharedDb(dbPath) {
-    const abs = path.resolve(dbPath);
-    if (_dbCache.has(abs)) return _dbCache.get(abs);
-
-    const db = new Database(abs);
-    db.pragma('journal_mode = WAL');
-    db.pragma('busy_timeout = 5000');
-    db.pragma('synchronous = NORMAL');
-    db.pragma('cache_size = -16000');
-    db.pragma('temp_store = memory');
-    db.pragma('mmap_size = 268435456');
-    db.pragma('foreign_keys = ON');
-    db.pragma('wal_autocheckpoint = 100');
-
-    db.exec(`
-        CREATE TABLE IF NOT EXISTS store (
-            collection  TEXT NOT NULL,
-            key         TEXT NOT NULL,
-            value       TEXT,
-            updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-            PRIMARY KEY (collection, key)
-        );
-        CREATE INDEX IF NOT EXISTS idx_store_collection ON store (collection);
-    `);
-
-    _dbCache.set(abs, db);
-    return db;
-}
+import { getSharedDb } from '../../lib/dbPool.js';
 
 export class SQLiteDB {
     #db = null;
@@ -56,8 +21,20 @@ export class SQLiteDB {
 
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-        const dbPath   = path.join(dir, 'auth.db');
-        this.#db       = getSharedDb(dbPath);
+        // Gunakan pool global — tidak pernah buka 2 koneksi ke file yang sama
+        this.#db = getSharedDb(path.join(dir, 'auth.db'));
+
+        // Pastikan tabel store ada (idempotent)
+        this.#db.exec(`
+            CREATE TABLE IF NOT EXISTS store (
+                collection  TEXT NOT NULL,
+                key         TEXT NOT NULL,
+                value       TEXT,
+                updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+                PRIMARY KEY (collection, key)
+            );
+            CREATE INDEX IF NOT EXISTS idx_store_collection ON store (collection);
+        `);
 
         this.#stmtGet    = this.#db.prepare('SELECT value FROM store WHERE collection = ? AND key = ?');
         this.#stmtAll    = this.#db.prepare('SELECT key, value FROM store WHERE collection = ?');
@@ -79,7 +56,7 @@ export class SQLiteDB {
             const raw = fs.readFileSync(jsonPath, 'utf-8').trim();
             if (!raw || raw === '{}') return;
 
-            const data = JSON.parse(raw);
+            const data    = JSON.parse(raw);
             const entries = Object.entries(data);
             if (entries.length === 0) return;
 

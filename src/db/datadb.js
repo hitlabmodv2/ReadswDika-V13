@@ -1,27 +1,16 @@
 'use strict';
 
-import { createRequire } from 'module';
 import path from 'path';
 import fs from 'fs';
-
-const _require = createRequire(import.meta.url);
-const Database = _require('better-sqlite3');
+import { getSharedDb } from '../../lib/dbPool.js';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_PATH  = path.join(DATA_DIR, 'data.db');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const db = new Database(DB_PATH);
-
-db.pragma('journal_mode = WAL');
-db.pragma('busy_timeout = 5000');
-db.pragma('synchronous = NORMAL');
-db.pragma('cache_size = -32000');
-db.pragma('temp_store = memory');
-db.pragma('mmap_size = 268435456');
-db.pragma('foreign_keys = ON');
-db.pragma('wal_autocheckpoint = 100');
+// Gunakan pool global — satu koneksi untuk data.db
+const db = getSharedDb(DB_PATH);
 
 db.exec(`
     CREATE TABLE IF NOT EXISTS users (
