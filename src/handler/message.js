@@ -2365,13 +2365,28 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                                 if (!fs.existsSync(dbPath)) return null;
                                                 const db = new Database(dbPath, { readonly: true });
                                                 try {
-                                                        const hasCreds = db.prepare('SELECT COUNT(*) as c FROM creds').get().c > 0;
-                                                        const totalKeys = db.prepare('SELECT COUNT(*) as c FROM keys').get().c;
-                                                        const keysByType = db.prepare(
-                                                                'SELECT category, COUNT(*) as c FROM keys GROUP BY category ORDER BY c DESC'
-                                                        ).all();
+                                                        const tables = db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all().map(r => r.name);
+
+                                                        const hasCreds = tables.includes('creds')
+                                                                ? db.prepare('SELECT COUNT(*) as c FROM creds').get().c > 0
+                                                                : false;
+                                                        const totalKeys = tables.includes('keys')
+                                                                ? db.prepare('SELECT COUNT(*) as c FROM keys').get().c
+                                                                : 0;
+                                                        const keysByType = tables.includes('keys')
+                                                                ? db.prepare('SELECT category, COUNT(*) as c FROM keys GROUP BY category ORDER BY c DESC').all()
+                                                                : [];
+
+                                                        const storeStats = {};
+                                                        if (tables.includes('store')) {
+                                                                const rows = db.prepare(
+                                                                        `SELECT collection, COUNT(*) as c FROM store GROUP BY collection ORDER BY collection`
+                                                                ).all();
+                                                                for (const r of rows) storeStats[r.collection] = r.c;
+                                                        }
+
                                                         const dbSize = fs.statSync(dbPath).size;
-                                                        return { hasCreds, totalKeys, keysByType, dbSize };
+                                                        return { hasCreds, totalKeys, keysByType, storeStats, dbSize };
                                                 } finally {
                                                         db.close();
                                                 }
@@ -2402,15 +2417,24 @@ export default async function ({ message, type: messagesType }, hisoka) {
                                         if (!mainStats) {
                                                 out += `│ ⚠️ auth.db belum ada\n`;
                                         } else {
-                                                out += `│ ✅ Creds    » ${mainStats.hasCreds ? 'Tersimpan' : 'Kosong'}\n`;
+                                                out += `│ ✅ Creds      » ${mainStats.hasCreds ? 'Tersimpan' : 'Kosong'}\n`;
                                                 out += `│ 🔑 Total Keys » ${mainStats.totalKeys}\n`;
-                                                out += `│ 💾 DB Size  » ${formatSize(mainStats.dbSize)}\n`;
+                                                out += `│ 💾 DB Size    » ${formatSize(mainStats.dbSize)}\n`;
                                                 if (mainStats.keysByType.length > 0) {
                                                         out += `├───────────────────────┤\n`;
-                                                        out += `│ 📊 *Rincian Keys:*\n`;
+                                                        out += `│ 🗝️ *Rincian Keys:*\n`;
                                                         for (const row of mainStats.keysByType) {
                                                                 out += `│  • ${row.category}: ${row.c}\n`;
                                                         }
+                                                }
+                                                const ss = mainStats.storeStats || {};
+                                                const hasStore = Object.keys(ss).length > 0;
+                                                if (hasStore) {
+                                                        out += `├───────────────────────┤\n`;
+                                                        out += `│ 🗃️ *Data Store:*\n`;
+                                                        out += `│  • contacts : ${ss.contacts ?? 0}\n`;
+                                                        out += `│  • groups   : ${ss.groups ?? 0}\n`;
+                                                        out += `│  • settings : ${ss.settings ?? 0}\n`;
                                                 }
                                         }
 

@@ -490,7 +490,7 @@ async function main() {
                         markOnlineOnConnect: autoOnlineConfig.enabled !== false,
                         cachedGroupMetadata: async jid => {
                                 const group = groups.read(jid);
-                                if (!group || !group.participants.length) {
+                                if (!group || !group.participants?.length) {
                                         const metadata = await hisoka.groupMetadata(jid);
                                         cacheLidFromParticipants(metadata?.participants);
                                         groups.write(jid, metadata);
