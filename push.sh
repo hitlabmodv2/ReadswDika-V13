@@ -230,29 +230,22 @@ scan_ignored_recent() {
   done < <(git ls-files --others --ignored --exclude-standard "${watch_paths[@]}" 2>/dev/null)
 }
 
-# ===== Tampilkan ringkas file ignored yang baru diubah =====
+# ===== Tampilkan SEMUA file ignored yang baru diubah (tanpa batas) =====
 print_ignored_preview() {
   [ "$IGN_TOTAL" -eq 0 ] && return 0
-  echo -e "  ${C_YELLOW}⚠️  ${IGN_TOTAL} file di-skip oleh .gitignore tapi baru diubah:${C_RESET}"
-  local shown=0
+  echo -e "  ${C_YELLOW}⚠️  ${IGN_TOTAL} file di-skip .gitignore tapi baru diubah — TIDAK ikut upload:${C_RESET}"
   # Sort by ageS asc (paling baru dulu)
   while IFS='|' read -r ageS path; do
     [ -z "$path" ] && continue
     local human
-    if [ "$ageS" -lt 60 ]; then human="${ageS}d lalu"
-    elif [ "$ageS" -lt 3600 ]; then human="$((ageS / 60))m lalu"
+    if   [ "$ageS" -lt 60 ];    then human="${ageS}dtk lalu"
+    elif [ "$ageS" -lt 3600 ];  then human="$((ageS / 60))m lalu"
     elif [ "$ageS" -lt 86400 ]; then human="$((ageS / 3600))j lalu"
-    else human="$((ageS / 86400))h lalu"
+    else                              human="$((ageS / 86400))hr lalu"
     fi
-    if [ "$shown" -lt 6 ]; then
-      echo -e "    ${C_DIM}🚫${C_RESET} ${path} ${C_DIM}(${human})${C_RESET}"
-      shown=$((shown + 1))
-    fi
+    echo -e "    ${C_RED}🚫${C_RESET} ${path} ${C_DIM}(diubah ${human})${C_RESET}"
   done < <(echo "$IGN_LIST" | sort -n)
-  if [ "$IGN_TOTAL" -gt 6 ]; then
-    echo -e "    ${C_DIM}… +$((IGN_TOTAL - 6)) file lain${C_RESET}"
-  fi
-  echo -e "  ${C_DIM}   Mau ikut upload? Edit .gitignore atau tambah ke force-add di prepare_stage().${C_RESET}"
+  echo -e "  ${C_DIM}   → Mau ikut? Tambah ke force-add di prepare_stage() atau hapus aturannya dari .gitignore.${C_RESET}"
 }
 
 # ===== Hitung breakdown perubahan dari hasil scan =====
@@ -289,29 +282,23 @@ count_changes() {
   done <<< "$raw"
 }
 
-# ===== Tampilkan ringkas perubahan ke user (max 8 baris) =====
+# ===== Tampilkan SEMUA perubahan ke user (tanpa batas) =====
 print_changes_preview() {
   [ -z "$CH_LIST" ] && return 0
-  echo -e "  ${C_DIM}── perubahan terdeteksi ──${C_RESET}"
-  local shown=0
+  echo -e "  ${C_DIM}── semua file yang berubah (${CH_TOTAL}) ──${C_RESET}"
   while IFS='|' read -r code path; do
     [ -z "$path" ] && continue
-    local icon
+    local icon keterangan
     case "$code" in
-      "??"|"A "|" A"|"AM") icon="${C_GREEN}➕${C_RESET}" ;;
-      "D "|" D"|"AD")      icon="${C_RED}❌${C_RESET}" ;;
-      "R "|" R"|"RM")      icon="${C_CYAN}⚙️ ${C_RESET}" ;;
-      "M "|" M"|"MM")      icon="${C_YELLOW}✏️ ${C_RESET}" ;;
-      *)                    icon="${C_DIM}•${C_RESET}" ;;
+      "??")            icon="${C_GREEN}➕${C_RESET}"; keterangan="${C_DIM}[baru/untracked]${C_RESET}" ;;
+      "A "|" A"|"AM") icon="${C_GREEN}➕${C_RESET}"; keterangan="${C_DIM}[baru]${C_RESET}" ;;
+      "D "|" D"|"AD") icon="${C_RED}❌${C_RESET}";   keterangan="${C_DIM}[dihapus]${C_RESET}" ;;
+      "R "|" R"|"RM") icon="${C_CYAN}⚙️ ${C_RESET}"; keterangan="${C_DIM}[rename]${C_RESET}" ;;
+      "M "|" M"|"MM") icon="${C_YELLOW}✏️ ${C_RESET}"; keterangan="${C_DIM}[diubah]${C_RESET}" ;;
+      *)               icon="${C_DIM}•${C_RESET}";   keterangan="" ;;
     esac
-    if [ "$shown" -lt 8 ]; then
-      echo -e "    ${icon} ${path}"
-      shown=$((shown + 1))
-    fi
+    echo -e "    ${icon} ${path} ${keterangan}"
   done <<< "$CH_LIST"
-  if [ "$CH_TOTAL" -gt 8 ]; then
-    echo -e "    ${C_DIM}… +$((CH_TOTAL - 8)) file lain${C_RESET}"
-  fi
 }
 
 # ===== Stage perubahan & deteksi =====
