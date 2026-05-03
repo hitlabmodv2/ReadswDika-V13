@@ -478,7 +478,7 @@ async function main() {
                                 creds: state.creds,
                                 keys: makeCacheableSignalKeyStore(state.keys, silentLogger),
                         },
-                        browser: Browsers('Chrome'), // socketon: Browsers(browserName)
+                        browser: Browsers('Edge'), // socketon: Browsers(browserName)
                         generateHighQualityLinkPreview: true,
                         syncFullHistory: true, // ini bisa true false
                         keepAliveIntervalMs: 30000, // ini baru
