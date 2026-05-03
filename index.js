@@ -46,6 +46,7 @@ import JSONDB from './src/db/json.js';
 import SQLiteDB from './src/db/sqlitedb.js';
 import { kvGet, kvSet, kvMigrateFromJSON } from './src/db/datadb.js';
 import { initBotStats } from './src/db/botStats.js';
+import { checkpointAll } from './lib/dbPool.js';
 import { injectClient } from './src/helper/inject.js';
 import { getCaseName, loadConfig } from './src/helper/utils.js';
 import { MemoryMonitor } from './src/helper/memoryMonitor.js';
@@ -1458,14 +1459,19 @@ async function startWithGuard() {
 
 setupCrashGuard(startWithGuard);
 
-// Pause semua timer jadibot saat bot mati — agar waktu tidak berkurang saat offline
+// Graceful shutdown: checkpoint WAL + pause jadibot timers
 function handleShutdown(signal) {
-        console.log(`\x1b[33m[JadibotTimer] ${signal} diterima — pause semua timer jadibot...\x1b[39m`);
+        console.log(`\x1b[33m[Shutdown] ${signal} diterima — checkpoint DB + pause jadibot...\x1b[39m`);
         pauseAllJadibotTimers();
+        try { checkpointAll(); } catch {}
         process.exit(0);
 }
 process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 process.on('SIGINT',  () => handleShutdown('SIGINT'));
-process.on('exit',    () => pauseAllJadibotTimers()); // fallback: exit mendadak/crash
+// fallback saat exit mendadak/crash — checkpoint WAL dulu baru pause timer
+process.on('exit', () => {
+        try { checkpointAll(); } catch {}
+        pauseAllJadibotTimers();
+});
 
 startWithGuard();
