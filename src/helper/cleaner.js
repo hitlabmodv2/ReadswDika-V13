@@ -322,21 +322,15 @@ export function cleanStaleSessionFiles(sessionDir, { skipConfigCheck = false } =
         } catch {}
     }
     try {
-        const credsPath = path.join(sessionDir, 'creds.json')
-        if (!fs.existsSync(credsPath)) return
+        // Semua session sudah di SQLite (auth.db), bukan file JSON individual.
+        // pre-key-*.json, sender-key-*.json, session-*.json tidak ada lagi.
+        // Fungsi ini dipertahankan untuk kompatibilitas tapi tidak ada yang dihapus.
+        const dbPath = path.join(sessionDir, 'auth.db')
+        if (!fs.existsSync(dbPath)) return
 
-        const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'))
-        const firstUnuploaded = creds.firstUnuploadedPreKeyId ?? creds.nextPreKeyId ?? 0
-        if (!firstUnuploaded || firstUnuploaded <= 0) return
-
-        // Hanya hapus pre-key yang sudah sangat jauh di bawah threshold upload.
-        // Buffer 200 memastikan pre-key yang masih ada di server WhatsApp
-        // tetap tersedia secara lokal untuk mendekripsi sesi baru.
-        const SAFE_BUFFER = 200
-        const safeDeleteBefore = firstUnuploaded - SAFE_BUFFER
-        if (safeDeleteBefore <= 0) {
-            return
-        }
+        // Semua keys sudah tersimpan di auth.db — tidak ada file JSON stale untuk dihapus.
+        // Fungsi ini aman sebagai no-op setelah migrasi ke SQLite.
+        return
 
         const files = fs.readdirSync(sessionDir)
         let deletedPreKeys = 0

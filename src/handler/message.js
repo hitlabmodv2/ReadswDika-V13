@@ -32,6 +32,7 @@ import { exec } from 'child_process';
 import util from 'util';
 
 import { msToTime, loadConfig, saveConfig, getCaseName } from '../helper/utils.js';
+import { getSharedDb } from '../../lib/dbPool.js';
 import { stopAutoCleaner, restartAutoCleaner, cleanStaleSessionFiles, clearOldFiles, clearTmpFolder } from '../helper/cleaner.js';
 import { getUptimeFormatted, getBotStats } from '../db/botStats.js';
 import { logError, formatErrorReport, clearErrors, generateErrorFileTxt, getInfoErrorTxtPath, getErrorStats } from '../db/errorLog.js';
@@ -2358,38 +2359,32 @@ export default async function ({ message, type: messagesType }, hisoka) {
                         case 'sessionstat': {
                                 if (!m.isOwner) return;
                                 try {
-                                        const Database = _require('better-sqlite3');
-                                        const { BufferJSON } = _require('socketon');
-
                                         const readDbStats = (dbPath) => {
                                                 if (!fs.existsSync(dbPath)) return null;
-                                                const db = new Database(dbPath, { readonly: true });
-                                                try {
-                                                        const tables = db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all().map(r => r.name);
+                                                // Gunakan pool shared — tidak buka koneksi kedua ke file yang sama
+                                                const db = getSharedDb(dbPath);
+                                                const tables = db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all().map(r => r.name);
 
-                                                        const hasCreds = tables.includes('creds')
-                                                                ? db.prepare('SELECT COUNT(*) as c FROM creds').get().c > 0
-                                                                : false;
-                                                        const totalKeys = tables.includes('keys')
-                                                                ? db.prepare('SELECT COUNT(*) as c FROM keys').get().c
-                                                                : 0;
-                                                        const keysByType = tables.includes('keys')
-                                                                ? db.prepare('SELECT category, COUNT(*) as c FROM keys GROUP BY category ORDER BY c DESC').all()
-                                                                : [];
+                                                const hasCreds = tables.includes('creds')
+                                                        ? db.prepare('SELECT COUNT(*) as c FROM creds').get().c > 0
+                                                        : false;
+                                                const totalKeys = tables.includes('keys')
+                                                        ? db.prepare('SELECT COUNT(*) as c FROM keys').get().c
+                                                        : 0;
+                                                const keysByType = tables.includes('keys')
+                                                        ? db.prepare('SELECT category, COUNT(*) as c FROM keys GROUP BY category ORDER BY c DESC').all()
+                                                        : [];
 
-                                                        const storeStats = {};
-                                                        if (tables.includes('store')) {
-                                                                const rows = db.prepare(
-                                                                        `SELECT collection, COUNT(*) as c FROM store GROUP BY collection ORDER BY collection`
-                                                                ).all();
-                                                                for (const r of rows) storeStats[r.collection] = r.c;
-                                                        }
-
-                                                        const dbSize = fs.statSync(dbPath).size;
-                                                        return { hasCreds, totalKeys, keysByType, storeStats, dbSize };
-                                                } finally {
-                                                        db.close();
+                                                const storeStats = {};
+                                                if (tables.includes('store')) {
+                                                        const rows = db.prepare(
+                                                                `SELECT collection, COUNT(*) as c FROM store GROUP BY collection ORDER BY collection`
+                                                        ).all();
+                                                        for (const r of rows) storeStats[r.collection] = r.c;
                                                 }
+
+                                                const dbSize = fs.statSync(dbPath).size;
+                                                return { hasCreds, totalKeys, keysByType, storeStats, dbSize };
                                         };
 
                                         const formatSize = (bytes) => {

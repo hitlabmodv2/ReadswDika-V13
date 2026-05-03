@@ -45,7 +45,7 @@ import JSONDB from './src/db/json.js';
 import SQLiteDB from './src/db/sqlitedb.js';
 import { kvGet, kvSet, kvMigrateFromJSON } from './src/db/datadb.js';
 import { initBotStats } from './src/db/botStats.js';
-import { checkpointAll } from './lib/dbPool.js';
+import { checkpointAll, releaseDb } from './lib/dbPool.js';
 import { injectClient } from './src/helper/inject.js';
 import { getCaseName, loadConfig } from './src/helper/utils.js';
 import { MemoryMonitor } from './src/helper/memoryMonitor.js';
@@ -782,6 +782,8 @@ setTimeout(() => {
 
                                         // Hapus hanya session file bot utama (bukan jadibot)
                                         try {
+                                                // Tutup koneksi pool ke auth.db sebelum file dihapus
+                                                releaseDb(path.join(sessionDir, 'auth.db'));
                                                 const dirContents = await fs.promises.readdir(sessionDir);
                                                 for (const file of dirContents) {
                                                         if (file.startsWith('.env')) continue;
