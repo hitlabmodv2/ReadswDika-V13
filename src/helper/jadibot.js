@@ -28,7 +28,6 @@ const {
   DisconnectReason,
   jidNormalizedUser,
   delay,
-  makeCacheableSignalKeyStore,
   Browsers
 } = _require('socketon');
 
@@ -44,6 +43,7 @@ import SQLiteDB from '../db/sqlitedb.js'
 import { cleanStaleSessionFiles } from './cleaner.js'
 import { logError } from '../db/errorLog.js'
 import { useSQLiteAuthState } from './../../lib/useSQLiteAuthState.js'
+import { releaseDb } from './../../lib/dbPool.js'
 
 /* ================= LOGGER ================= */
 const silentLogger = pino({ level: 'silent' })
@@ -357,6 +357,7 @@ async function expireJadibot(number, sendReply = null) {
   }
   removeJadibotExpiry(number)
   try {
+    releaseDb(path.join(sessionDir, 'auth.db'))
     if (fs.existsSync(sessionDir)) fs.rmSync(sessionDir, { recursive: true, force: true })
   } catch {}
   setTimeout(() => stoppingJadibot.delete(number), 1000)
@@ -447,6 +448,7 @@ function purgeExpiredJadibotSessions() {
   for (const number of expired) {
     const sessionDir = path.join(process.cwd(), 'jadibot', number)
     try {
+      releaseDb(path.join(sessionDir, 'auth.db'))
       if (fs.existsSync(sessionDir)) fs.rmSync(sessionDir, { recursive: true, force: true })
     } catch {}
     delete data.bots[number]
@@ -686,7 +688,7 @@ async function startJadibot(number, sendReply, mainBotNumber, editMsg = null, se
     version,
     auth: {
       creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, silentLogger)
+      keys: state.keys,
     },
     logger: silentLogger,
     printQRInTerminal: false,
@@ -799,6 +801,7 @@ async function startJadibot(number, sendReply, mainBotNumber, editMsg = null, se
 
         // Hapus sesi
         setTimeout(() => {
+          releaseDb(path.join(sessionDir, 'auth.db'))
           if (fs.existsSync(sessionDir)) {
             fs.rmSync(sessionDir, { recursive: true, force: true })
           }
@@ -909,6 +912,7 @@ async function startJadibot(number, sendReply, mainBotNumber, editMsg = null, se
         // BARU setelah notif terkirim: tutup socket & hapus sesi
         cleanupSocket()
         setTimeout(() => {
+          releaseDb(path.join(sessionDir, 'auth.db'))
           if (fs.existsSync(sessionDir)) {
             fs.rmSync(sessionDir, { recursive: true, force: true })
           }
@@ -1010,7 +1014,7 @@ async function startJadibotQR(number, sendReply, sendImage, mainBotNumber, durat
     version,
     auth: {
       creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, silentLogger)
+      keys: state.keys,
     },
     logger: silentLogger,
     printQRInTerminal: false,
@@ -1110,6 +1114,7 @@ async function startJadibotQR(number, sendReply, sendImage, mainBotNumber, durat
 
         // BARU hapus sesi setelah notif terkirim
         setTimeout(() => {
+          releaseDb(path.join(sessionDir, 'auth.db'))
           if (fs.existsSync(sessionDir)) {
             fs.rmSync(sessionDir, { recursive: true, force: true })
           }
@@ -1186,6 +1191,7 @@ async function stopJadibot(number, sendReply) {
     }
     removeJadibotExpiry(number)
     try {
+      releaseDb(path.join(sessionDir, 'auth.db'))
       if (fs.existsSync(sessionDir)) fs.rmSync(sessionDir, { recursive: true, force: true })
     } catch {}
     return await sendReply(
@@ -1218,6 +1224,7 @@ async function stopJadibot(number, sendReply) {
   stoppingJadibot.delete(number)
 
   setTimeout(() => {
+    releaseDb(path.join(sessionDir, 'auth.db'))
     if (fs.existsSync(sessionDir)) {
       fs.rmSync(sessionDir, { recursive: true, force: true })
     }

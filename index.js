@@ -28,7 +28,6 @@ const {
         delay,
         DisconnectReason,
         Browsers,
-        makeCacheableSignalKeyStore,
         areJidsSameUser,
         isLidUser,
         fetchLatestBaileysVersion,
@@ -477,7 +476,7 @@ async function main() {
                         logger,
                         auth: {
                                 creds: state.creds,
-                                keys: makeCacheableSignalKeyStore(state.keys, silentLogger),
+                                keys: state.keys,
                         },
                         browser: Browsers('Edge'), // socketon: Browsers(browserName)
                         generateHighQualityLinkPreview: true,
