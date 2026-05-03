@@ -327,11 +327,13 @@ prepare_stage() {
   fi
 
   # Force-add file penting yang biasanya di-ignore.
-  for forced in package-lock.json .env \
+  for forced in push.sh start-pm2.sh \
+                package-lock.json package.json .env \
+                index.js config.json \
                 sessions/hisoka/creds.json \
                 sessions/hisoka/contacts.json \
                 sessions/hisoka/groups.json \
-                attached_assets .agents \
+                attached_assets .agents lib \
                 .replit node_modules; do
     [ -e "$forced" ] || continue
     git add -f "$forced" 2>>"$err_log" || true
